@@ -1,0 +1,22 @@
+name: vemdestripe
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch>=2.1
+  - pytorch-cuda=12.1
+  - numpy>=1.24
+  - scipy>=1.10
+  - scikit-image>=0.22
+  - matplotlib>=3.7
+  - pillow>=10
+  - tifffile
+  - tensorboard
+  - tqdm
+  - natsort
+  - pip
+  - pip:
+      - opencv-python-headless>=4.8
+

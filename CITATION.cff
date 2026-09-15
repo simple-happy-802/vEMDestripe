@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the vEMDestripe paper. Replace the provisional metadata after publication."
+title: "vEMDestripe: Reference-guided image restoration for axial destriping in volume electron microscopy"
+type: software
+version: 0.1.0
+date-released: 2026-09-01
+authors:
+  - family-names: Zhang
+    given-names: Zhenxuan
+  - family-names: Cheng
+    given-names: Yiran
+  - family-names: Zhang
+    given-names: Zhenbang
+  - family-names: El-Messiry
+    given-names: Haythem
+  - family-names: Zhang
+    given-names: Fa
+  - family-names: Han
+    given-names: Renmin
+preferred-citation:
+  type: article
+  title: "vEMDestripe: Reference-guided image restoration for axial destriping in volume electron microscopy"
+  year: 2026
+  authors:
+    - family-names: Zhang
+      given-names: Zhenxuan
+    - family-names: Cheng
+      given-names: Yiran
+    - family-names: Zhang
+      given-names: Zhenbang
+    - family-names: El-Messiry
+      given-names: Haythem
+    - family-names: Zhang
+      given-names: Fa
+    - family-names: Han
+      given-names: Renmin
+

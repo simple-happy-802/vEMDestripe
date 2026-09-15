@@ -1,0 +1,12 @@
+numpy>=1.24,<3
+torch>=2.1
+opencv-python-headless>=4.8
+tifffile>=2023.7
+Pillow>=10
+tqdm>=4.66
+natsort>=8.4
+tensorboard>=2.14
+scipy>=1.10
+scikit-image>=0.22
+matplotlib>=3.7
+

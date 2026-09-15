@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vemdestripe"
+version = "0.1.0"
+description = "Reference-guided restoration of axial stripe artifacts in volume electron microscopy"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "Zhenxuan Zhang"},
+  {name = "Yiran Cheng"},
+  {name = "Zhenbang Zhang"},
+  {name = "Haythem El-Messiry"},
+  {name = "Fa Zhang"},
+  {name = "Renmin Han"},
+]
+dependencies = [
+  "numpy>=1.24,<3",
+  "torch>=2.1",
+  "opencv-python-headless>=4.8",
+  "tifffile>=2023.7",
+  "Pillow>=10",
+  "tqdm>=4.66",
+  "natsort>=8.4",
+]
+
+[project.optional-dependencies]
+train = ["tensorboard>=2.14"]
+evaluation = ["scipy>=1.10", "scikit-image>=0.22", "matplotlib>=3.7"]
+test = ["pytest>=7.4"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vemdestripe*", "data_generation*", "evaluation*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

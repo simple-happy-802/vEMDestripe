@@ -1,0 +1,6 @@
+-r requirements.txt
+pytest>=7.4
+brisque>=0.0.17
+pypiqe>=1.2
+libsvm-official>=3.32
+
