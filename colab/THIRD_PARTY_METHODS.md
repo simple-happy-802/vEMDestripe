@@ -47,10 +47,14 @@ artifact. The local GPU rewrite is also not used for this EMISAC baseline.
   branch from weights; the demo does not replace it with unrelated weights.
 - SSCOR learns from each test volume. The packaged Bumbarger comparison used
   200 epochs; the quick notebook does not repeat that training.
-- vEMDestripe includes a final-output mean/std calibration to the selected
-  original reference snapshots. The default uses its complete 2651-section
-  output fit, then crops 32 sections after calibration. An optional GPU run
-  uses a separate complete 32-section demo fit, explicitly labelled as such.
+- In the v4 demonstration, vEMDestripe uses a final-output mean/std map to the
+  single user-selected **Original `slice_00793.png`**. The default source
+  statistics still cover all 2651 saved network-output sections; one map is
+  used for all sections before the display crop. Optional live GPU mode uses
+  all 32 newly generated outputs as its source and the same fixed target.
+- This is a demonstration-specific intensity target, not spatial registration
+  or the earlier paper reference-pool calibration protocol. Training and the
+  production `infer.py` default reference-target workflow are unchanged.
 - Only vEMDestripe includes this calibration stage. Original, EMISAC, FECNet
   and SSCOR retain their delivered pixels, without an added transform.
 - The default view and primary table use saved final pipeline outputs. The

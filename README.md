@@ -26,18 +26,21 @@ where `Lphoto` matches global and local mean/standard-deviation statistics at 32
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Pipeline_Demo.ipynb)
 
-The default demo applies vEMDestripe's recorded **whole-volume reference
-mean/std calibration before saving final output**, then evaluates the saved
-files. Only vEMDestripe includes this stage; delivered EMISAC/FECNet/SSCOR
-pixels are not changed. The evaluator does not normalize any method.
+The v4 demo maps vEMDestripe brightness/contrast to the fixed user-selected
+**Original `slice_00793.png`**, saves final outputs, then evaluates those files.
+Default source statistics cover all 2651 saved network-output sections; the
+same map is applied before cropping local Z 777–808 for display. Optional
+live GPU mode uses a separate complete 32-section source volume and the same
+fixed target. Only vEMDestripe is transformed; delivered EMISAC/FECNet/SSCOR
+pixels remain unchanged, and the evaluator never normalizes any method.
 
-The published Bumbarger mapping uses all 2651 network-output sections and
-11 original reference snapshots, then crops local Z 777–808 for display.
-Optional live GPU mode fits a separate complete 32-section demo volume and
-is labelled accordingly. EMISAC remains the verified unchanged-official-source
+This is a demonstration-specific target, not spatial registration or the
+paper's original-reference-pool protocol. Training and the production
+`infer.py` default remain unchanged. EMISAC is still the verified unchanged-official-source
 legacy-environment precomputed result. See [colab/README.md](colab/README.md).
 This real dataset has no paired clean target, and demo metrics are not the
-full-paper benchmark. The previous v2 notebook remains historical.
+full-paper benchmark. Code is pinned to `demo-original-target-v4`, reusing the
+immutable v3 data asset. Previous version tags remain unchanged.
 
 ## Repository layout
 

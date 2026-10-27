@@ -6,10 +6,13 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Pipeline_Demo.ipynb)
 
-vEMDestripe 流程为：**网络输出 → 整卷均值／标准差匹配到原始参考切片 → 保存最终图像 → 评估**。
+新版演示为：**网络输出 → 整卷均值／标准差匹配到固定 Original `slice_00793.png` → 保存最终图像 → 评估**。
 这一步只属于 vEMDestripe；EMISAC、FECNet、SSCOR 不额外校准。评估程序只读最终文件，不归一化。
-默认展示版使用完整 2651 张网络输出及 11 张原始参考拟合的固定映射，再截取 32 张展示。
-不要求 GPU；可选现场模式需要 GPU，单独拟合全部 32 张新输出，明确区别于论文整卷上下文。
+默认源统计仍使用完整 2651 张网络输出，目标只取用户指定的 Original-793 全部像素，
+整卷应用同一映射后截取 32 张展示。不要求 GPU；可选现场模式使用全部 32 张新输出
+作为源统计，目标仍固定为 Original-793，并明确区分这两个上下文。
+这次只改演示目标，不修改训练或正式 `infer.py` 的默认原始参考池校准流程；
+亮度／对比度匹配不是空间配准，也不冒充此前论文参考池协议。旧版本标签保留。
 EMISAC 仍是未改官方源码在固定旧环境生成并验证的结果。详见 [colab/README.md](colab/README.md)。
 
 ## 最重要的复现说明
