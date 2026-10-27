@@ -22,10 +22,23 @@ L = L1 + 0.1 Ledge + 0.3 Lphoto + 0.1 LSSIM,
 
 where `Lphoto` matches global and local mean/standard-deviation statistics at 32, 64, and 128 pixel scales. See [docs/METHOD.md](docs/METHOD.md) for the exact implementation.
 
+## Run the Bumbarger13 comparison in Colab
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Demo.ipynb)
+
+The notebook runs the released vEMDestripe checkpoint and the authors' pinned
+official EMISAC source on a fixed 32-section Bumbarger13 window. It compares
+them with the paper-run FECNet and SSCOR outputs, shows XY/XZ/YZ views, and
+recomputes real-volume metrics. Bumbarger13 has no aligned clean target, so the
+demo intentionally does not report PSNR or SSIM. See
+[colab/README.md](colab/README.md) for the one-time release setup and exact
+baseline provenance.
+
 ## Repository layout
 
 ```text
 vEMDestripe/
+├── colab/                 click-through Bumbarger13 comparison notebook
 ├── data_generation/       paired simulation and reference generation
 ├── vemdestripe/            model, loss, and shared reference operations
 ├── evaluation/             matched full-/no-reference benchmark
@@ -41,7 +54,7 @@ vEMDestripe/
 Python 3.10 or newer and PyTorch 2.x are recommended. On a CUDA server, install the PyTorch build appropriate for the installed driver, then install this project:
 
 ```bash
-git clone <YOUR_REPOSITORY_URL> vEMDestripe
+git clone https://github.com/simple-happy-802/vEMDestripe.git vEMDestripe
 cd vEMDestripe
 python -m venv .venv
 source .venv/bin/activate
@@ -172,7 +185,7 @@ python -m pytest -q
 
 ## Citation
 
-Citation metadata is provided in `CITATION.cff`. Update it with the final journal, DOI, repository URL, and release tag after publication.
+Citation metadata is provided in `CITATION.cff`. Update it with the final journal, DOI, and release tag after publication.
 
 ## License
 

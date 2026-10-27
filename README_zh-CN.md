@@ -2,6 +2,16 @@
 
 本目录是论文方法 **vEMDestripe** 的独立开源整理版，包含训练数据生成、固定网络结构、固定损失函数、训练、推理、批量评估和 Slurm 脚本。公开代码中不再使用开发阶段实验编号作为算法名称。
 
+## Google Colab 在线对比演示
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Demo.ipynb)
+
+该 Notebook 使用固定的 32 张 Bumbarger13 切片，现场运行 vEMDestripe 和
+EMISAC 作者官方仓库的固定版本，并与论文实验产生的 FECNet、SSCOR 结果进行
+对比。它可以交互查看 XY/XZ/YZ 结果并重新计算真实体数据指标。Bumbarger13
+没有逐切片配对的干净标签，因此演示不会错误地报告 PSNR 或 SSIM。发布前的
+一次性配置和第三方方法来源见 [colab/README.md](colab/README.md)。
+
 ## 最重要的复现说明
 
 项目已将最终选择的论文权重导出到 `checkpoints/vemdestripe_seed42/best.pth`。该权重是使用 16×16 参考图分块独立重训得到的，不是把 32×32 权重在推理时临时改成 16×16。对应推理脚本从参考目录均匀选择最多 16 张切片，先用 `float32` 求均值，再进行 16×16 非重叠分块均值。当前论文草稿写的是 10 张参考切片，因此仍需统一参考切片数量；详见 [docs/PAPER_CODE_ALIGNMENT.md](docs/PAPER_CODE_ALIGNMENT.md)。

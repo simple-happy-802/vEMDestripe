@@ -2,6 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite the vEMDestripe paper. Replace the provisional metadata after publication."
 title: "vEMDestripe: Reference-guided image restoration for axial destriping in volume electron microscopy"
 type: software
+repository-code: "https://github.com/simple-happy-802/vEMDestripe"
 version: 0.1.0
 date-released: 2026-09-01
 authors:
