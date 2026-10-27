@@ -1,6 +1,6 @@
 # Third-party methods in the Bumbarger13 demo
 
-The recommended notebook is `vEMDestripe_Bumbarger_Official_Demo.ipynb`.
+The recommended notebook is `vEMDestripe_Bumbarger_Pipeline_Demo.ipynb`.
 It displays source entry points and records which images were generated live
 and which are immutable precomputed artifacts. Showing source does not imply
 that every method is rerun inside the notebook.
@@ -47,11 +47,15 @@ artifact. The local GPU rewrite is also not used for this EMISAC baseline.
   branch from weights; the demo does not replace it with unrelated weights.
 - SSCOR learns from each test volume. The packaged Bumbarger comparison used
   200 epochs; the quick notebook does not repeat that training.
-- vEMDestripe can run its released checkpoint live when enabled with a GPU.
-  If a packaged fallback is selected, it is labelled as precomputed.
-- Raw algorithm output is the default display. Optional global affine
-  matching uses one transform per volume and is labelled separately, including
-  in metric exports. It is not part of the unchanged algorithm output.
+- vEMDestripe includes a final-output mean/std calibration to the selected
+  original reference snapshots. The default uses its complete 2651-section
+  output fit, then crops 32 sections after calibration. An optional GPU run
+  uses a separate complete 32-section demo fit, explicitly labelled as such.
+- Only vEMDestripe includes this calibration stage. Original, EMISAC, FECNet
+  and SSCOR retain their delivered pixels, without an added transform.
+- The default view and primary table use saved final pipeline outputs. The
+  evaluator performs no normalization or fitting. A network-only diagnostic
+  view replaces only vEMDestripe's images, not the main evaluation input.
 - Bumbarger13 has no paired clean target. The demo therefore omits PSNR/SSIM;
   its 32-section metrics must not be presented as the paper's full evaluation.
 

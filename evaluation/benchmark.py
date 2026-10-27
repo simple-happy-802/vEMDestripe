@@ -115,15 +115,6 @@ class PNGStack(Stack):
         return image
 
 
-class GlobalAffineStack(Stack):
-    """Read-only whole-volume brightness/contrast calibration wrapper."""
-    def __init__(self, source: Stack, scale: float, bias: float):
-        self.source, self.scale, self.bias, self.count = source, float(scale), float(bias), source.count
-    def read(self, index: int) -> np.ndarray:
-        image = self.source.read(index).astype(np.float32)
-        return np.rint(np.clip(image * self.scale + self.bias, 0, 255)).astype(np.uint8)
-
-
 class VolumeTIFF(Stack):
     def __init__(self, path: Path):
         self.path, self.array = path, tifffile.memmap(path, mode="r")
@@ -308,56 +299,6 @@ def load(stack: Stack, ids: Sequence[int]) -> np.ndarray:
     out = stack.read_many(ids).astype(np.uint8, copy=False)
     if out.ndim != 3: raise ValueError(f"Expected Z,Y,X volume; got {out.shape}")
     return out
-
-
-def global_moments(stack: Stack, start: int = 0) -> Tuple[float, float]:
-    """Mean/std over a specified tail of the volume in raw gray values."""
-    total, squares, pixels = 0.0, 0.0, 0
-    for z in range(start, stack.count):
-        image = stack.read(z)
-        # ``meanStdDev`` computes population statistics in OpenCV's native
-        # double-precision accumulator.  Combining its per-slice first and
-        # second moments is algebraically identical to summing all pixels,
-        # while avoiding two 1024x1024 float64 temporaries for every slice.
-        mean, std = cv2.meanStdDev(image)
-        mean_value, std_value = float(mean[0, 0]), float(std[0, 0])
-        total += mean_value * image.size
-        squares += (std_value * std_value + mean_value * mean_value) * image.size
-        pixels += image.size
-    mean = total / pixels
-    return mean, float(np.sqrt(max(squares / pixels - mean * mean, 0.0)))
-
-
-def add_original_global_matches(stacks: Dict[str, Optional[Stack]], source_methods: Sequence[str], test_start: int) -> List[Dict[str, object]]:
-    """Append matched vEM stacks using one affine transform per complete volume."""
-    original = stacks.get("Original")
-    if original is None:
-        return []
-    target_mean, target_std = global_moments(original, test_start)
-    result: List[Dict[str, object]] = []
-    for source_name in source_methods:
-        matched_name = MATCHED_METHOD_BY_SOURCE[source_name]
-        source = stacks.get(source_name)
-        if source is None:
-            continue
-        source_mean, source_std = global_moments(source, test_start)
-        if source_std < 1e-8:
-            raise ValueError(f"{source_name} has zero global contrast; cannot match it to Original.")
-        scale = target_std / source_std
-        bias = target_mean - scale * source_mean
-        matched = GlobalAffineStack(source, scale, bias)
-        matched_mean, matched_std = global_moments(matched, test_start)
-        stacks[matched_name] = matched
-        result.append({
-            "method": matched_name, "source_method": source_name,
-            "scale": scale, "bias": bias,
-            "original_mean": target_mean, "original_std": target_std,
-            "source_mean": source_mean, "source_std": source_std,
-            "matched_mean": matched_mean, "matched_std": matched_std,
-            "mean_error_to_original": matched_mean - target_mean,
-            "std_error_to_original": matched_std - target_std,
-        })
-    return result
 
 
 def z_windows(n: int, length: int, windows: int, start: int = 0) -> List[List[int]]:
@@ -653,24 +594,6 @@ def cross_section_validation_page(dataset: str, stacks: Dict[str, Optional[Stack
     fig.savefig(out/f"cross_section_validation_{dataset}.png"); fig.savefig(out/f"cross_section_validation_{dataset}.pdf"); pdf.savefig(fig); plt.close(fig)
 
 
-def global_match_page(dataset: str, matches: List[Dict[str, object]], out: Path, pdf: PdfPages) -> None:
-    """Document that the whole-volume affine calibration actually hits Original moments."""
-    if not matches:
-        return
-    style()
-    columns = ["Method", "a (contrast)", "b (brightness)", "Original mean", "Matched mean", "Delta mean", "Original std", "Matched std", "Delta std"]
-    body = []
-    for row in matches:
-        body.append([PLOT_LABELS[str(row["method"])], *[f"{float(row[k]):.4f}" for k in ("scale", "bias", "original_mean", "matched_mean", "mean_error_to_original", "original_std", "matched_std", "std_error_to_original")]])
-    fig, ax = plt.subplots(figsize=(11.69, max(2.45, .42*(len(body)+1)))); ax.axis("off")
-    table = ax.table(cellText=body, colLabels=columns, cellLoc="center", loc="center", colWidths=[.24]+[.095]*8)
-    table.auto_set_font_size(False); table.set_fontsize(8.4); table.scale(1,1.55)
-    for c in range(len(columns)): table[(0,c)].set_text_props(fontweight="bold")
-    for r in range(1,len(body)+1): table[(r,0)].set_text_props(color=COLORS[str(matches[r-1]["method"])],fontweight="bold")
-    ax.set_title(f"{dataset}: whole-volume Original brightness/contrast matching (P = Perceptual; raw 0--255)",fontweight="bold",pad=14)
-    fig.savefig(out/f"global_match_{dataset}.png"); fig.savefig(out/f"global_match_{dataset}.pdf"); pdf.savefig(fig); plt.close(fig)
-
-
 def curves_page(dataset: str, profiles: Dict[str, Dict[str, object]], methods: Sequence[str], out: Path, pdf: PdfPages, tag: str = "") -> None:
     style(); fig,axes=plt.subplots(2,1,figsize=(11.69,6.4),sharex=True,constrained_layout=True)
     for m in methods:
@@ -801,91 +724,10 @@ def metric_dictionary_page(pdf: PdfPages) -> None:
     ax.set_title("指标定义与解释",fontproperties=cn,fontweight="bold",fontsize=19,pad=22); pdf.savefig(fig); plt.close(fig)
 
 
-def main() -> None:
-    root=Path(__file__).resolve().parent.parent; default_ref=root/"data"/"jrc_mus-kidney_em-fibsem-uint8-s0_uint8_x10000-11024_y5000-6024_z5000-6600.tif"
-    ap=argparse.ArgumentParser(); ap.add_argument("--output-dir",type=Path,default=Path("zstripe_benchmark"));ap.add_argument("--datasets",default="")
-    ap.add_argument("--reference-tiff",type=Path,default=default_ref,help="Fallback clean TIFF for legacy global NIQE mode.")
-    ap.add_argument("--niqe-pristine-source",choices=("global-reference","dataset-clean"),default="global-reference",help="Use one global pristine model, or fit a separate model from each dataset's clean XY TIFF.")
-    ap.add_argument("--niqe-training-slices",type=int,default=400,help="Uniformly sampled clean XY slices used to fit each NIQE model.")
-    ap.add_argument("--niqe-train-first-slices",type=int,default=0,help="If positive, fit NIQE using only the first N clean XY slices (for held-out evaluation).")
-    ap.add_argument("--test-z-start",type=int,default=0,help="First held-out Z index used by every evaluation metric; 0 keeps the legacy full-volume behavior.")
-    ap.add_argument("--niqe-xy-test-slices",type=int,default=1,help="Number of randomly selected held-out XY slices scored by NIQE per window; 0 means score every held-out slice.")
-    ap.add_argument("--niqe-xy-test-seed",type=int,default=20260721,help="Seed for reproducible random held-out XY NIQE selection.")
-    ap.add_argument("--match-vem-to-original",action="store_true",help="Add globally brightness/contrast-matched variants of vEMDestripe and vEMDestripe + Perceptual.")
-    ap.add_argument("--match-all-methods-to-original",action="store_true",help="Add an Original-global-matched variant for every non-Original method.")
-    ap.add_argument("--z-window",type=int,default=96);ap.add_argument("--windows",type=int,default=3);ap.add_argument("--sections",type=int,default=8);ap.add_argument("--iqa-slices",type=int,default=4);ap.add_argument("--z-ratio",type=float,default=6.0);ap.add_argument("--cross-plane-border",type=int,default=32,help="Pixels excluded from both in-plane ends of every XZ/YZ section.");ap.add_argument("--display-mode",choices=("raw","matched"),default="raw"); args=ap.parse_args()
-    if args.niqe_training_slices < 1 or args.niqe_train_first_slices < 0 or args.test_z_start < 0: raise ValueError("NIQE split sizes must be non-negative, and --niqe-training-slices positive.")
-    if args.match_vem_to_original and args.match_all_methods_to_original: raise ValueError("Choose only one of --match-vem-to-original and --match-all-methods-to-original.")
-    test_start = args.test_z_start if args.test_z_start else args.niqe_train_first_slices
-    out=args.output_dir if args.output_dir.is_absolute() else root/args.output_dir; out.mkdir(parents=True,exist_ok=True); figs=out/"figures";figs.mkdir(exist_ok=True); tables=out/"tables";tables.mkdir(exist_ok=True); niqe_cache=out/"niqe_cache";niqe_cache.mkdir(exist_ok=True)
-    global_model = None
-    if args.niqe_pristine_source == "global-reference":
-        reference=VolumeTIFF(args.reference_tiff); refids=spaced(reference.count,args.niqe_training_slices); mu,cov,patches=fit_pristine_model((reference.read(i) for i in refids),96,.75); global_model=(mu,cov,patches,reference.path,refids)
-        niqe_protocol=f"全局参考模式：{reference.path.name} 的 {len(refids)} 张干净 XY 切片拟合，共 {patches} 个局部块。"
-    else:
-        refids=[]; patches=0
-        niqe_protocol=f"按数据集独立拟合：每个数据集只能使用其对应干净 TIFF 的 XY 切片；均匀抽取 {args.niqe_training_slices} 张（或该 TIFF 的全部切片）。"
-    if args.niqe_train_first_slices:
-        niqe_protocol += f" 严格留出：前 {args.niqe_train_first_slices} 张仅用于 NIQE 拟合，Z={test_start} 至末层仅用于指标测试。"
-    niqe_protocol += (f" 留出段 XY-NIQE：{'全部 XY 切片' if args.niqe_xy_test_slices <= 0 else f'随机抽取 {args.niqe_xy_test_slices} 张（seed={args.niqe_xy_test_seed}）'}；"
-                      f"XZ/YZ-NIQE：由完整留出 Z 段组成的截面计算（每轴 {args.sections} 个内部位置）。")
-    brisque_scorer=make_brisque()
-    test_root=configured_root(root,"VEMDESTRIPE_TEST_DATA_ROOT","test_data"); names=sorted(p.name for p in test_root.iterdir() if p.is_dir()); requested={x for x in args.datasets.split(",") if x}; names=[x for x in names if not requested or x in requested]
-    match_sources = tuple(MATCHED_METHOD_BY_SOURCE) if args.match_all_methods_to_original else (VEM_MATCH_SOURCES if args.match_vem_to_original else ())
-    matched_methods = tuple(MATCHED_METHOD_BY_SOURCE[x] for x in match_sources)
-    methods = METHODS + matched_methods
-    rows=[]; coverage=[]; niqe_models={}; global_matches=[]; niqe_samples=[]
-    with PdfPages(out/"zstripe_benchmark_report.pdf") as pdf:
-        protocol_page(pdf,niqe_protocol,args.cross_plane_border)
-        metric_dictionary_page(pdf)
-        for dataset in names:
-            stacks=stacks_for_dataset(root,dataset)
-            if stacks.get("Original") is None:
-                coverage.append({"dataset":dataset,**{m:(stacks.get(m).count if stacks.get(m) else 0) for m in methods},"available":""})
-                continue
-            if test_start >= stacks["Original"].count: raise ValueError(f"{dataset}: test start {test_start} leaves no held-out slices.")
-            matches = add_original_global_matches(stacks, match_sources, test_start) if match_sources else []
-            available=[m for m in methods if stacks.get(m) is not None]
-            coverage.append({"dataset":dataset,**{m:(stacks.get(m).count if stacks.get(m) else 0) for m in methods},"available":";".join(available)})
-            ratio=args.z_ratio if uses_z6_resampling(dataset) else 1.0; gt=ground_truth(root,dataset); dataset_rows=[]; profiles={}
-            if args.niqe_pristine_source == "dataset-clean":
-                if gt is None:
-                    raise ValueError(f"{dataset}: --niqe-pristine-source=dataset-clean requires a registered clean TIFF.")
-                niqe_ids=list(range(min(gt.count,args.niqe_train_first_slices))) if args.niqe_train_first_slices else spaced(gt.count,args.niqe_training_slices)
-                if not niqe_ids: raise ValueError(f"{dataset}: no clean XY slices selected for NIQE training.")
-                model_cache=niqe_cache/f"{dataset}_pristine_model_{len(niqe_ids)}slices.npz"
-                if model_cache.exists():
-                    cached=np.load(model_cache)
-                    mu,cov,patches=cached["mu"],cached["cov"],int(cached["patches"])
-                else:
-                    mu,cov,patches=fit_pristine_model((gt.read(i) for i in niqe_ids),96,.75)
-                    np.savez_compressed(model_cache,mu=mu,cov=cov,patches=np.asarray(patches,dtype=np.int64))
-                niqe_models[dataset]={"source":"dataset-clean XY","clean_tiff":str(gt.path),"training_slice_count":len(niqe_ids),"training_slice_ids":niqe_ids,"selected_pristine_patches":patches}
-            else:
-                assert global_model is not None
-                mu,cov,patches,reference,niqe_ids=global_model
-                niqe_models[dataset]={"source":"global-reference XY","clean_tiff":str(reference),"training_slice_count":len(niqe_ids),"training_slice_ids":niqe_ids,"selected_pristine_patches":patches}
-            match_by_method={str(m["method"]):m for m in matches}
-            for method in available:
-                cache_name=f"{dataset}_{method}_z{test_start}_xy{args.niqe_xy_test_slices or 'all'}_seed{args.niqe_xy_test_seed}.npz"
-                metrics,profile=nonreference(stacks[method],mu,cov,96,ratio,args.z_window,args.windows,args.sections,args.iqa_slices,brisque_scorer,args.cross_plane_border,test_start,args.niqe_xy_test_slices,niqe_cache/cache_name,args.niqe_xy_test_seed); metrics.update(full_reference(stacks[method],gt,start=test_start) if gt else {"psnr":np.nan,"ssim":np.nan,"mae":np.nan,"msssim":np.nan,"edge_corr":np.nan}); metrics.update({"dataset":dataset,"method":method,"test_z_start":test_start,"test_z_count":stacks[method].count-test_start,"z_resampled_for_xz_yz":ratio,"cross_plane_inplane_border":args.cross_plane_border,"niqe_pristine_source":niqe_models[dataset]["source"],"niqe_training_slices":niqe_models[dataset]["training_slice_count"],"niqe_pristine_patches":patches,"niqe_xy_test_seed":args.niqe_xy_test_seed,"niqe_xy_z_indices":";".join(map(str,profile["niqe_xy_z_indices"]))});
-                if method in match_by_method:
-                    match = match_by_method[method]
-                    metrics.update({"global_match_scale":match["scale"],"global_match_bias":match["bias"],"global_match_mean_error":match["mean_error_to_original"],"global_match_std_error":match["std_error_to_original"]})
-                rows.append(metrics);dataset_rows.append(metrics);profiles[method]=profile
-            for match in matches: global_matches.append({"dataset":dataset,"test_z_start":test_start,**match})
-            raw_methods=[m for m in METHODS if m in available]; match_group=["Original"]+[m for m in matched_methods if m in available]
-            comparison_page(dataset,stacks,raw_methods,ratio,args.cross_plane_border,figs,pdf,args.display_mode,test_start,"_raw","raw methods")
-            if len(match_group) > 1: comparison_page(dataset,stacks,match_group,ratio,args.cross_plane_border,figs,pdf,args.display_mode,test_start,"_matched","Original-global-matched methods")
-            cross_section_validation_page(dataset,stacks,ratio,args.cross_plane_border,test_start,figs,pdf,args.display_mode)
-            global_match_page(dataset,matches,figs,pdf);table_page(dataset,dataset_rows,figs,pdf);specialized_table_page(dataset,dataset_rows,figs,pdf)
-            curves_page(dataset,profiles,raw_methods,figs,pdf,"_raw")
-            if len(match_group) > 1: curves_page(dataset,profiles,match_group,figs,pdf,"_matched")
-            niqe_samples += niqe_distribution_page(dataset,profiles,raw_methods,figs,pdf,"_raw","raw methods")
-            if len(match_group) > 1: niqe_samples += niqe_distribution_page(dataset,profiles,match_group,figs,pdf,"_matched","Original-global-matched methods")
-            write_csv(tables/f"{dataset}_metrics.csv",dataset_rows)
-    write_csv(out/"metrics_all_datasets.csv",rows);write_csv(out/"coverage.csv",coverage);write_csv(out/"global_brightness_contrast_matching.csv",global_matches);write_csv(out/"niqe_score_samples.csv",niqe_samples)
-    (out/"metadata.json").write_text(json.dumps({"arguments":vars(args),"niqe_models":niqe_models,"global_brightness_contrast_matching":global_matches,"z6_resampling_rule":list(Z6_DATASET_PREFIXES)},indent=2,default=str),encoding="utf8")
-    print(f"Finished {len(rows)} method-dataset rows. PDF: {out/'zstripe_benchmark_report.pdf'}")
+def main():
+    """Compatibility entry point; evaluate saved final files unchanged."""
+    from .evaluate import main as evaluate_saved_outputs
+    evaluate_saved_outputs()
 
-if __name__=="__main__": main()
+
+if __name__ == '__main__': main()

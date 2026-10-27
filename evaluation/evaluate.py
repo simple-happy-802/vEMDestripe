@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matched-only, reproducible batch benchmark for EM Z-stripe restoration.
+"""Read-only saved-output benchmark: no photometric fitting or normalization.
 
 Real volumes use an automatically audited *contiguous-prefix* normal-image
 pool for the NIQE pristine model.  The held-out tail remains a completely
@@ -31,8 +31,8 @@ from scipy.ndimage import gaussian_filter1d
 from .niqe import fit_pristine_model, niqe_score, niqe_scores_gpu, torch
 from .niqe_cross_sections import cached_axis_scores
 from .benchmark import (
-    COLORS, GlobalAffineStack, METHODS, PLOT_LABELS, PNGStack, VolumeTIFF, PagesTIFF,
-    comparison_page, curves_page, full_reference, global_moments, ground_truth, load, style,
+    COLORS, METHODS, PLOT_LABELS, PNGStack, VolumeTIFF, PagesTIFF,
+    comparison_page, curves_page, full_reference, ground_truth, load, style,
     make_brisque, nonreference, specialized_table_page, spaced, style, table_page,
     uses_z6_resampling, stacks_for_dataset, configured_root,
 )
@@ -48,7 +48,7 @@ SIMULATED = KIDNEY_SIMULATED | {"SIM-jrc_mus-liver-3"}
 # SNEMItrain now uses only its own raw slices (not SNEMItest).
 SNEMI_DONOR: Dict[str, str] = {}
 PRISTINE_SELECTION_SCHEMA = 2
-METHOD_CACHE_SCHEMA = 2
+METHOD_CACHE_SCHEMA = 3
 
 
 class WindowStack:
@@ -56,7 +56,7 @@ class WindowStack:
 
     The wrapper deliberately reindexes the selected source interval to
     ``0..count-1``.  Therefore every cross-section, profile, full-reference
-    score, and affine match is calculated from exactly the same uninterrupted
+    score is calculated from exactly the same uninterrupted
     held-out interval, without ever exposing NIQE-prior frames to testing.
     """
     def __init__(self, source, start: int, stop: int):
@@ -85,9 +85,6 @@ def stable_hash(payload: object) -> str:
 
 def stack_fingerprint(stack) -> Dict[str, object]:
     """Cheap, provenance-preserving description of a stack and its source files."""
-    if isinstance(stack, GlobalAffineStack):
-        return {"kind": "global_affine", "scale": stack.scale, "bias": stack.bias,
-                "source": stack_fingerprint(stack.source)}
     if isinstance(stack, WindowStack):
         return {"kind": "window", "start": stack.start, "stop": stack.stop,
                 "source": stack_fingerprint(stack.source)}
@@ -106,66 +103,27 @@ def stack_fingerprint(stack) -> Dict[str, object]:
     return {"kind": type(stack).__name__, "count": getattr(stack, "count", None)}
 
 
-def match_to_target(stacks: Dict[str, Optional[object]], target, methods: Sequence[str], target_label: str,
-                    scope: str, cached_matches: Optional[Dict[str, Dict[str, object]]] = None) -> Tuple[Dict[str, Optional[object]], List[Dict[str, object]]]:
-    """Return method stacks globally matched to a target stack, including Original.
+def prepare_saved_outputs(stacks, methods, start, stop, ground_truth_stack=None):
+    """Expose the same saved pixels in a shared Z window; never fit intensities.
 
-    Simulated data uses the paired clean TIFF as target.  Real data uses the
-    unmodified Original stack as target.  Keeping the public method name
-    unchanged avoids treating brightness-calibrated outputs as a different
-    restoration method in plots and tables.
+    vEMDestripe must already have completed its reference-calibration/export
+    stage. Other methods are their delivered outputs. Ground truth, if supplied,
+    is only a scoring target, never a source of evaluator-side parameters.
     """
-    target_mean, target_std = global_moments(target)
-    matched: Dict[str, Optional[object]] = dict(stacks)
-    report: List[Dict[str, object]] = []
-    for method in methods:
-        source = stacks.get(method)
-        if source is None:
-            continue
-        prior = (cached_matches or {}).get(method)
-        if prior is not None:
-            # Reuse the exact historical affine calibration for an unchanged
-            # source volume.  This avoids re-reading every old-method slice
-            # when merely adding one new baseline such as SSCOR.
-            scale, bias = float(prior["scale"]), float(prior["bias"])
-            matched[method] = GlobalAffineStack(source, scale, bias)
-            report.append({
-                "method": method, "matching_target": prior.get("matching_target", target_label),
-                "matching_scope": prior.get("matching_scope", scope), "scale": scale, "bias": bias,
-                "target_mean": float(prior["target_mean"]), "target_std": float(prior["target_std"]),
-                "source_mean": float(prior["source_mean"]), "source_std": float(prior["source_std"]),
-                "matched_mean": float(prior["matched_mean"]), "matched_std": float(prior["matched_std"]),
-                "mean_error_to_target": float(prior["mean_error_to_target"]),
-                "std_error_to_target": float(prior["std_error_to_target"]),
-            })
-            continue
-        source_mean, source_std = global_moments(source)
-        if source_std < 1e-8:
-            raise RuntimeError(f"{method}: global contrast is zero; cannot match to {target_label}.")
-        scale = target_std / source_std
-        bias = target_mean - scale * source_mean
-        calibrated = GlobalAffineStack(source, scale, bias)
-        matched_mean, matched_std = global_moments(calibrated)
-        matched[method] = calibrated
-        report.append({
-            "method": method, "matching_target": target_label, "matching_scope": scope,
-            "scale": scale, "bias": bias, "target_mean": target_mean, "target_std": target_std,
-            "source_mean": source_mean, "source_std": source_std,
-            "matched_mean": matched_mean, "matched_std": matched_std,
-            "mean_error_to_target": matched_mean - target_mean,
-            "std_error_to_target": matched_std - target_std,
-        })
-    return matched, report
+    selected = {name: WindowStack(stacks[name], start, stop)
+                for name in methods if stacks.get(name) is not None and stacks[name].count >= stop}
+    target = WindowStack(ground_truth_stack, start, stop) if ground_truth_stack is not None else None
+    return selected, target
 
 
 def method_cache_key(dataset: str, method: str, stack, niqe_model_path: Path, args, z_ratio: float,
-                     matching: Dict[str, object]) -> str:
+                     score_protocol: Dict[str, object]) -> str:
     protocol = {
         "schema": METHOD_CACHE_SCHEMA, "dataset": dataset, "method": method,
         "stack": stack_fingerprint(stack),
         "model": {"path": str(niqe_model_path), "size": niqe_model_path.stat().st_size,
                   "mtime_ns": niqe_model_path.stat().st_mtime_ns},
-        "matching": matching,
+        "score_protocol": score_protocol,
         "settings": {"iqa_slices": args.iqa_slices, "metric_cross_sections": args.metric_cross_sections,
                      "niqe_cross_sections": args.niqe_cross_sections, "niqe_xy_slices": args.niqe_xy_slices,
                      "cross_plane_border": args.cross_plane_border, "gpu_batch_size": args.gpu_batch_size,
@@ -196,22 +154,6 @@ def save_method_cache(cache_root: Path, key: str, metrics: Dict[str, object], pr
     arrays = {key: np.asarray(value, dtype=float) for key, value in profile.items()}
     np.savez_compressed(folder / "profile.npz", **arrays)
     (folder / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-
-
-def matching_page(dataset: str, rows: Sequence[Dict[str, object]], figures: Path, pdf: PdfPages) -> None:
-    """Compact audit table with the actual calibration target named correctly."""
-    if not rows:
-        return
-    style(); fig, ax = plt.subplots(figsize=(11.69, max(2.4, .4 * (len(rows) + 1)))); ax.axis("off")
-    columns = ("Method", "Target", "Scale", "Bias", "Target mean", "Matched mean", "Delta mean", "Target std", "Matched std", "Delta std")
-    body = [[PLOT_LABELS[str(row["method"])], str(row["matching_target"]),
-             *[f"{float(row[key]):.4f}" for key in ("scale", "bias", "target_mean", "matched_mean", "mean_error_to_target", "target_std", "matched_std", "std_error_to_target")]] for row in rows]
-    table = ax.table(cellText=body, colLabels=columns, cellLoc="center", loc="center",
-                     colWidths=[.20,.14]+[.082]*8)
-    table.auto_set_font_size(False); table.set_fontsize(7.6); table.scale(1, 1.5)
-    for col in range(len(columns)): table[(0, col)].set_text_props(weight="bold")
-    for index, row in enumerate(rows, 1): table[(index, 0)].set_text_props(weight="bold", color=COLORS[str(row["method"])])
-    fig.savefig(figures / f"matching_{dataset}.png"); fig.savefig(figures / f"matching_{dataset}.pdf"); pdf.savefig(fig); plt.close(fig)
 
 
 def paper_niqe_curve_page(dataset: str, profiles: Dict[str, Dict[str, object]], methods: Sequence[str],
@@ -527,9 +469,9 @@ def audit_rows(dataset: str, rows: Sequence[Dict[str, object]]) -> List[Dict[str
 def compute_or_load_method(dataset: str, method: str, stack, eval_gt, mu: np.ndarray, cov: np.ndarray,
                            model_path: Path, z_ratio: float, args, brisque, cache_root: Path,
                            cache_lookup_roots: Sequence[Path], niqe_cache: Path, test_start: int,
-                           matching: Dict[str, object]) -> Tuple[Dict[str, object], Dict[str, object], bool, str]:
-    """Evaluate one calibrated method once; subsequently reuse its exact cache."""
-    key = method_cache_key(dataset, method, stack, model_path, args, z_ratio, matching)
+                           score_protocol: Dict[str, object]) -> Tuple[Dict[str, object], Dict[str, object], bool, str]:
+    """Evaluate one already saved method once; subsequently reuse its exact cache."""
+    key = method_cache_key(dataset, method, stack, model_path, args, z_ratio, score_protocol)
     for lookup_root in cache_lookup_roots:
         loaded = load_method_cache(lookup_root, key)
         if loaded is not None:
@@ -581,7 +523,7 @@ def compute_or_load_method(dataset: str, method: str, stack, eval_gt, mu: np.nda
         metrics.update({"psnr": np.nan, "ssim": np.nan, "mae": np.nan, "msssim": np.nan, "edge_corr": np.nan})
     profile["profile_z"] = [test_start + int(value) for value in profile["profile_z"]]
     provenance = {"cache_schema": METHOD_CACHE_SCHEMA, "dataset": dataset, "method": method,
-                  "matching": matching, "test_start": test_start, "test_count": stack.count,
+                  "score_protocol": score_protocol, "test_start": test_start, "test_count": stack.count,
                   "source": stack_fingerprint(stack), "model": str(model_path)}
     save_method_cache(cache_root, key, metrics, profile, provenance)
     return metrics, profile, False, key
@@ -590,7 +532,7 @@ def compute_or_load_method(dataset: str, method: str, stack, eval_gt, mu: np.nda
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description="Reusable all-dataset EM restoration benchmark")
-    parser.add_argument("--output-dir", type=Path, default=Path("zstripe_benchmark_all_clean_matched"))
+    parser.add_argument("--output-dir", type=Path, default=Path("zstripe_benchmark_saved_outputs"))
     parser.add_argument("--reuse-cache-from", type=Path, default=None,
                         help="Optional completed benchmark directory used read-only for NIQE priors and method caches.")
     parser.add_argument("--sscor-root", type=Path, default=root.parent / "SSCOR-master" / "vem_sscor_runs",
@@ -609,49 +551,12 @@ def main() -> None:
     parser.add_argument("--niqe-xy-slices", type=int, default=200,
                         help="Uniformly sampled held-out XY slices per method for GPU NIQE (0: all held-out slices).")
     parser.add_argument("--cross-plane-border", type=int, default=32)
-    parser.add_argument("--display-mode", choices=("raw", "matched"), default="raw")
+    parser.add_argument("--display-mode", choices=("raw",), default="raw")
     parser.add_argument("--test-z-length", type=int, default=200,
                         help="Length of the continuous held-out Z segment (0: use every remaining slice).")
     parser.add_argument("--evaluation-window-mode", choices=("tail", "max-hf-mad"), default="max-hf-mad",
                         help="For real volumes, use the tail or select the held-out segment with maximum robust high-frequency Z-mean fluctuation.")
-    parser.add_argument("--run-downstream-segmentation", action="store_true",
-                        help="Run the fixed-model matched/unmatched 3-D instance segmentation experiment instead of the IQA batch report.")
-    parser.add_argument("--segmentation-original", type=Path,
-                        help="Stripe-contaminated ZYX TIFF used by --run-downstream-segmentation.")
-    parser.add_argument("--segmentation-restored", type=Path,
-                        help="Restoration-output ZYX TIFF before brightness/contrast matching.")
-    parser.add_argument("--segmentation-labels", type=Path,
-                        help="Instance-ID label ZYX TIFF. It is never used for brightness/contrast matching.")
-    parser.add_argument("--segmentation-train-image", type=Path, default=None,
-                        help="Optional fixed image domain for training the one segmentation model (default: restored).")
-    parser.add_argument("--segmentation-match-reference", type=Path, default=None,
-                        help="Optional available intensity reference for global matching (default: original input; never labels).")
-    parser.add_argument("--segmentation-output-dir", type=Path, default=Path("downstream_segmentation_matched"))
-    parser.add_argument("--segmentation-epochs", type=int, default=12)
-    parser.add_argument("--segmentation-steps-per-epoch", type=int, default=50)
     args = parser.parse_args()
-    if args.run_downstream_segmentation:
-        required = {"--segmentation-original": args.segmentation_original,
-                    "--segmentation-restored": args.segmentation_restored,
-                    "--segmentation-labels": args.segmentation_labels}
-        missing = [flag for flag, value in required.items() if value is None]
-        if missing:
-            parser.error("--run-downstream-segmentation requires " + ", ".join(missing))
-        downstream_output = args.segmentation_output_dir if args.segmentation_output_dir.is_absolute() else root / args.segmentation_output_dir
-        command = [sys.executable, str(root / "downstream_segmentation_matched.py"),
-                   "--original", str(args.segmentation_original),
-                   "--restored", str(args.segmentation_restored),
-                   "--labels", str(args.segmentation_labels),
-                   "--output-dir", str(downstream_output),
-                   "--epochs", str(args.segmentation_epochs),
-                   "--steps-per-epoch", str(args.segmentation_steps_per_epoch)]
-        if args.segmentation_train_image is not None:
-            command += ["--train-image", str(args.segmentation_train_image)]
-        if args.segmentation_match_reference is not None:
-            command += ["--match-reference", str(args.segmentation_match_reference)]
-        print("Launching downstream segmentation:\n  " + " ".join(command), flush=True)
-        subprocess.run(command, check=True)
-        return
     output = args.output_dir if args.output_dir.is_absolute() else root / args.output_dir
     output.mkdir(parents=True, exist_ok=True); figures = output / "figures"; figures.mkdir(exist_ok=True); tables = output / "tables"; tables.mkdir(exist_ok=True)
     cache = output / "niqe_cache"; cache.mkdir(exist_ok=True); method_cache = output / "method_result_cache"; method_cache.mkdir(exist_ok=True)
@@ -660,15 +565,6 @@ def main() -> None:
         parser.error(f"--reuse-cache-from does not exist: {reuse_root}")
     reuse_niqe = reuse_root / "niqe_cache" if reuse_root is not None else None
     cache_lookup_roots = [method_cache] + ([reuse_root / "method_result_cache"] if reuse_root is not None else [])
-    reuse_matches: Dict[Tuple[str, str], Dict[str, object]] = {}
-    if reuse_root is not None and (reuse_root / "global_brightness_contrast_matching.csv").is_file():
-        with (reuse_root / "global_brightness_contrast_matching.csv").open("r", encoding="utf-8-sig", newline="") as handle:
-            for row in csv.DictReader(handle):
-                try:
-                    reuse_matches[(row["dataset"], row["method"])] = {key: (float(value) if key not in {"dataset", "method", "matching_target", "matching_scope"} else value)
-                                                                       for key, value in row.items() if value not in {None, ""}}
-                except (KeyError, ValueError):
-                    continue
     test_root = configured_root(root, "VEMDESTRIPE_TEST_DATA_ROOT", "test_data")
     names = {p.name for p in test_root.iterdir() if p.is_dir()}
     simulation_root = configured_root(root, "VEMDESTRIPE_SIM_DATA_ROOT", "testdata-sim")
@@ -735,13 +631,13 @@ def main() -> None:
         print(f"Saved evaluation-window analysis: {report}", flush=True)
         return
     if torch is None or not torch.cuda.is_available(): raise RuntimeError("This batch workflow requires CUDA PyTorch in stripe_removal.")
-    brisque = make_brisque(); all_metrics: List[Dict[str, object]] = []; all_matches: List[Dict[str, object]] = []; all_niqe: List[Dict[str, object]] = []; curve_bins: List[Dict[str, object]] = []
+    brisque = make_brisque(); all_metrics: List[Dict[str, object]] = []; all_niqe: List[Dict[str, object]] = []; curve_bins: List[Dict[str, object]] = []
     all_qc: List[Dict[str, object]] = []; coverage: List[Dict[str, object]] = []; all_audit: List[Dict[str, object]] = []; input_manifest: List[Dict[str, object]] = []
     metadata: Dict[str, object] = {
         "arguments": vars(args), "engine": "CUDA NIQE features + CPU covariance/IQA", "method_result_cache_schema": METHOD_CACHE_SCHEMA,
         "protocol": {
-            "simulated": "Every available method, including Original, is globally affine-matched to the paired clean TIFF using all common paired slices before held-out evaluation.",
-            "real": "Every available method, including Original, is globally affine-matched to the held-out Original volume before evaluation.",
+            "simulated": "Score saved final outputs unchanged; clean TIFF is used only for paired metrics and declared NIQE priors.",
+            "real": "Score saved final outputs unchanged. vEMDestripe calibration is completed and saved upstream; delivered baselines are not calibrated here.",
             "niqe": "Per-dataset pristine model; 200 held-out XY samples and 200 uniformly spaced interior XZ/YZ samples by default; raw scores and curve bins are saved.",
         }, "datasets": {},
     }
@@ -815,33 +711,15 @@ def main() -> None:
             # Bumbarger EMISAC 2000-Z output).  Retain it only when the whole
             # selected continuous evaluation window is covered.
             available_methods = [method for method in METHODS if stacks.get(method) is not None and stacks[method].count >= test_stop]
-            # Simulated outputs are calibrated to their clean ground truth over the
-            # entire paired volume.  Real outputs are calibrated to Original only
-            # within the held-out continuous evaluation interval.
-            if dataset in SIMULATED:
-                cached = {method: reuse_matches[(dataset, method)] for method in available_methods if (dataset, method) in reuse_matches}
-                calibrated_all, matches = match_to_target(stacks, gt, available_methods, "paired clean TIFF", "whole common paired volume", cached)
-                eval_stacks = {name: (WindowStack(value, test_start, test_stop) if value is not None else None)
-                               for name, value in calibrated_all.items()}
-                eval_gt = WindowStack(gt, test_start, test_stop)
-                matching_target = "paired clean TIFF"; matching_scope = "whole common paired volume"
-            else:
-                raw_window = {name: (WindowStack(value, test_start, test_stop) if value is not None else None)
-                              for name, value in stacks.items()}
-                # A changed evaluation window must be re-calibrated against
-                # that window's Original distribution.  Historical affine
-                # parameters are therefore deliberately not reused here.
-                cached = {}
-                eval_stacks, matches = match_to_target(raw_window, raw_window["Original"], available_methods,
-                                                        "held-out Original", "held-out continuous evaluation window", cached)
-                eval_gt = None; matching_target = "held-out Original"; matching_scope = "held-out continuous evaluation window"
+            eval_stacks, eval_gt = prepare_saved_outputs(
+                stacks, available_methods, test_start, test_stop, gt if dataset in SIMULATED else None)
             methods = [method for method in METHODS if eval_stacks.get(method) is not None]
             ratio = 6.0 if uses_z6_resampling(dataset) else 1.0
             coverage.append({"dataset": dataset, "count": original.count, "test_start": test_start, "test_z_count": test_stop-test_start, "normal_source": normal_source, "normal_source_short": "clean paired TIFF" if dataset in SIMULATED else (f"{donor} normal audit"), "niqe_train_count": len(train_indices), "method_count": len(methods), "methods": ";".join(methods), "warnings": ";".join(method for method in METHODS if stacks.get(method) is None)})
             profiles: Dict[str, Dict[str, object]] = {}; dataset_rows: List[Dict[str, object]] = []
             for method in methods:
                 stack = eval_stacks[method]
-                entry = next(item for item in matches if item["method"] == method)
+                entry = {"evaluator_photometric_transform": False, "input_pixels": "saved_final_outputs"}
                 base_metrics, profile, cache_hit, cache_key = compute_or_load_method(dataset, method, stack, eval_gt, mu, cov, mu_path, ratio, args, brisque, method_cache, cache_lookup_roots, cache, test_start, entry)
                 print(f"  [method] {method} {'cache' if cache_hit else 'computed'}", flush=True)
                 metrics = dict(base_metrics)
@@ -849,13 +727,11 @@ def main() -> None:
                                 "z_resampled_for_xz_yz":ratio,"cross_plane_inplane_border":args.cross_plane_border,
                                 "niqe_training_source":normal_source,"niqe_training_count":len(train_indices),
                                 "niqe_cross_sections_per_axis":min(args.niqe_cross_sections, 1024 - 2 * args.cross_plane_border) if args.niqe_cross_sections > 0 else 1024 - 2 * args.cross_plane_border,
-                                "global_matching_applied":True,"matching_target":matching_target,"matching_scope":matching_scope,
-                                "global_match_scale":entry["scale"],"global_match_bias":entry["bias"],
-                                "global_match_mean_error":entry["mean_error_to_target"],"global_match_std_error":entry["std_error_to_target"],
+                                "global_matching_applied":False,"evaluation_input":"saved_final_outputs",
                                 "result_cache_hit":cache_hit,"result_cache_key":cache_key})
                 profiles[method] = profile; dataset_rows.append(metrics); all_metrics.append(metrics)
                 input_manifest.append({"dataset":dataset,"method":method,"source_signature":stable_hash(stack_fingerprint(stack)),"result_cache_key":cache_key,
-                                       "matching_target":matching_target,"matching_scale":entry["scale"],"matching_bias":entry["bias"],"test_z_start":test_start,"test_z_stop":test_stop})
+                                       "evaluator_photometric_transform":False,"test_z_start":test_start,"test_z_stop":test_stop})
             if evaluation_window is not None:
                 evaluation_window_page(dataset, evaluation_window, figures, pdf)
                 raw_rows = [{"dataset": dataset, "source_z": int(z), "z_mean_intensity": float(mean),
@@ -864,18 +740,18 @@ def main() -> None:
                 write_csv(tables / f"{dataset}_raw_z_intensity_selection.csv", raw_rows)
                 write_csv(tables / f"{dataset}_evaluation_window_candidates.csv", evaluation_window_candidates)
             if qc_rows: selection_review_page(dataset, qc_rows, target_folder / "niqe_pristine", pdf, figures)
-            comparison_page(dataset, eval_stacks, methods, ratio, args.cross_plane_border, figures, pdf, args.display_mode, 0, "_clean_or_original_matched", f"all methods matched to {matching_target}; source Z {test_start}:{test_stop}")
-            matching_page(dataset, matches, figures, pdf); table_page(dataset, dataset_rows, figures, pdf); specialized_table_page(dataset, dataset_rows, figures, pdf)
-            curves_page(dataset, profiles, methods, figures, pdf, "_clean_or_original_matched")
-            curve_bins.extend(paper_niqe_curve_page(dataset, profiles, methods, figures, pdf, "clean_matched" if dataset in SIMULATED else "original_matched"))
+            comparison_page(dataset, eval_stacks, methods, ratio, args.cross_plane_border, figures, pdf, args.display_mode, 0, "_saved_outputs", f"saved final outputs; no evaluator normalization; source Z {test_start}:{test_stop}")
+            table_page(dataset, dataset_rows, figures, pdf); specialized_table_page(dataset, dataset_rows, figures, pdf)
+            curves_page(dataset, profiles, methods, figures, pdf, "_saved_outputs")
+            curve_bins.extend(paper_niqe_curve_page(dataset, profiles, methods, figures, pdf, "saved_outputs"))
             for method, profile in profiles.items():
                 for plane, key in (("xy", "niqe_xy_samples"), ("xz", "niqe_xz_samples"), ("yz", "niqe_yz_samples")):
-                    all_niqe.extend({"dataset":dataset,"method":method,"plane":plane,"niqe_score":float(score),"matching_target":matching_target,
+                    all_niqe.extend({"dataset":dataset,"method":method,"plane":plane,"niqe_score":float(score),"evaluator_photometric_transform":False,
                                      "test_z_start":test_start,"test_z_stop":test_stop} for score in profile.get(key, []) if np.isfinite(score))
-            write_csv(tables / f"{dataset}_metrics.csv", dataset_rows); all_matches.extend({"dataset":dataset,"test_z_start":test_start,"test_z_stop":test_stop,**entry} for entry in matches); all_audit.extend(audit_rows(dataset, dataset_rows))
-            metadata["datasets"][dataset] = {"test_z_start":test_start,"test_z_stop":test_stop,"test_z_count":test_stop-test_start,"normal_source":normal_source,"niqe_train_indices":train_indices,"selection_manifest":str(manifest) if manifest else None,"niqe_pristine_patches":patches,"z_ratio":ratio,"methods":methods,"matching_target":matching_target,"matching_scope":matching_scope,"evaluation_window_mode":args.evaluation_window_mode,"evaluation_window_analysis":evaluation_window}
+            write_csv(tables / f"{dataset}_metrics.csv", dataset_rows); all_audit.extend(audit_rows(dataset, dataset_rows))
+            metadata["datasets"][dataset] = {"test_z_start":test_start,"test_z_stop":test_stop,"test_z_count":test_stop-test_start,"normal_source":normal_source,"niqe_train_indices":train_indices,"selection_manifest":str(manifest) if manifest else None,"niqe_pristine_patches":patches,"z_ratio":ratio,"methods":methods,"evaluator_photometric_transform":False,"evaluation_window_mode":args.evaluation_window_mode,"evaluation_window_analysis":evaluation_window}
         coverage_page(coverage, pdf, figures)
-    write_csv(output / "metrics_all.csv", all_metrics); write_csv(output / "global_brightness_contrast_matching.csv", all_matches); write_csv(output / "niqe_score_samples.csv", all_niqe); write_csv(output / "niqe_curve_bins.csv", curve_bins); write_csv(output / "niqe_pristine_qc_all.csv", all_qc); write_csv(output / "coverage.csv", coverage); write_csv(output / "result_audit.csv", all_audit); write_csv(output / "input_method_manifest.csv", input_manifest)
+    write_csv(output / "metrics_all.csv", all_metrics); write_csv(output / "niqe_score_samples.csv", all_niqe); write_csv(output / "niqe_curve_bins.csv", curve_bins); write_csv(output / "niqe_pristine_qc_all.csv", all_qc); write_csv(output / "coverage.csv", coverage); write_csv(output / "result_audit.csv", all_audit); write_csv(output / "input_method_manifest.csv", input_manifest)
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
     inprogress_report.replace(report_path)
     print(f"Finished all-dataset benchmark report: {report_path}")

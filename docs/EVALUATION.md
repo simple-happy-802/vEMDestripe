@@ -1,6 +1,6 @@
 # Evaluation protocol
 
-`evaluation/evaluate.py` is the packaged publication benchmark derived from the two supplied `evaluate_zstripe_benchmark*.py` programs. It discovers available methods, checks stack alignment, computes metrics, caches expensive measurements, and writes tables, curves, figures, and provenance files.
+`evaluation/evaluate.py` reads already saved final images without any photometric fitting or normalization. Do not point it at network_raw/. Old matched-result caches are invalidated by cache schema 3. It is the packaged publication benchmark derived from the two supplied `evaluate_zstripe_benchmark*.py` programs. It discovers available methods, checks stack alignment, computes metrics, caches expensive measurements, and writes tables, curves, figures, and provenance files.
 
 ## Input roots
 
@@ -32,8 +32,8 @@ Six explicitly configured anisotropic dataset families use 6× Z interpolation o
 - Do not silently crop or reorder a method to improve its result.
 - Record the continuous evaluation window selected by `max-hf-mad`.
 - Use ground truth only for full-reference metrics and a declared paired-reference experiment.
-- Do not use labels to fit display matching or to select a favorable real-data window.
-- Report raw vEMDestripe output as the primary result; any global intensity matching is a separately named diagnostic.
+- Real-data calibration uses recorded original reference snapshots upstream. Clean-target synthetic calibration must be explicitly declared as privileged; labels are never used by this evaluator to alter predictions.
+- Report saved complete-pipeline vEMDestripe output as the primary result. Its reference calibration is an upstream output step; the evaluator does not fit or apply it. Delivered baselines are not normalized.
 
 ## Command
 

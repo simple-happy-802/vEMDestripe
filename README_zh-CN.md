@@ -2,17 +2,15 @@
 
 本目录是论文方法 **vEMDestripe** 的独立开源整理版，包含训练数据生成、固定网络结构、固定损失函数、训练、推理、批量评估和 Slurm 脚本。公开代码中不再使用开发阶段实验编号作为算法名称。
 
-## Google Colab 在线对比演示
+## Google Colab 完整流程对比演示
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Official_Demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Pipeline_Demo.ipynb)
 
-新版 Notebook 使用固定的 32 张 Bumbarger13 切片。vEMDestripe 可使用发布权重
-现场推理；没有 GPU 时可查看明确标记的冻结输出。EMISAC 展示**未修改的官方源码
-在固定旧环境中生成的预计算结果**，FECNet、SSCOR 也使用各自已记录配置的冻结结果，
-不将它们描述为本次 Colab 现场运行。页面可查看源码与来源记录，交互比较 XY/XZ/YZ
-图像并重新计算指标。默认展示原始输出，可另选明确标记的整体亮度匹配视图。
-Bumbarger13 没有逐片配对的干净标签，因此不报告 PSNR/SSIM；32 张演示指标不代替
-论文完整评估。使用与发布说明见 [colab/README.md](colab/README.md)。
+vEMDestripe 流程为：**网络输出 → 整卷均值／标准差匹配到原始参考切片 → 保存最终图像 → 评估**。
+这一步只属于 vEMDestripe；EMISAC、FECNet、SSCOR 不额外校准。评估程序只读最终文件，不归一化。
+默认展示版使用完整 2651 张网络输出及 11 张原始参考拟合的固定映射，再截取 32 张展示。
+不要求 GPU；可选现场模式需要 GPU，单独拟合全部 32 张新输出，明确区别于论文整卷上下文。
+EMISAC 仍是未改官方源码在固定旧环境生成并验证的结果。详见 [colab/README.md](colab/README.md)。
 
 ## 最重要的复现说明
 
@@ -71,3 +69,23 @@ sbatch --export=ALL,MODEL_PATH=/path/to/best.pth,TEST_DATA_ROOT=/path/to/test_me
 每个真实数据集都应在 `references/<数据集名>/` 中放置独立人工筛选的正常参考切片。对于带配对标签的模拟测试集，脚本允许使用 `groundtruth/` 作为复现实验用参考池，但论文中必须明确说明，且不能把这种结果当作无标签真实场景性能。
 
 训练与推理细节分别见 [docs/DATA.md](docs/DATA.md)、[docs/METHOD.md](docs/METHOD.md) 和 [docs/EVALUATION.md](docs/EVALUATION.md)。
+
+## 最终输出和评估分离
+
+新版 `infer.py` 目录模式默认保留 `network_raw/` 中间结果，并把校准后的最终
+`*_deflickered.png` 保存到指定输出目录根部，同时记录 `CALIBRATION.json`。
+源统计来自全部输出像素，目标来自本次实际选择的原始参考切片像素池，不是融合图或分块图。
+每片应用同一张 256 级映射表；不能逐切片拟合，也不要只用评估窗口重新拟合。
+
+已生成的完整网络输出可以单独校准导出：
+
+```bash
+python calibrate_volume.py --input-dir /path/to/all_network_outputs \
+  --reference-dir /path/to/original_reference_snapshots \
+  --reference-metadata /path/to/processing_info.json \
+  --output-dir /path/to/new_final_outputs --output-stack /path/to/final.tif
+```
+
+`python -m evaluation.evaluate` 和 Slurm 评估脚本只计算已保存文件的指标，不做亮度匹配。
+其他方法保持原交付像素。网络原始输出消融请显式指定 `--no_photometric_calibration`。
+不要在默认整卷校准下指定 `--max_images`。输出目录已有结果时请改用新目录。

@@ -1,89 +1,94 @@
-# Google Colab comparison demo
+# Complete-pipeline Colab comparison
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Official_Demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Pipeline_Demo.ipynb)
 
-`vEMDestripe_Bumbarger_Official_Demo.ipynb` compares vEMDestripe, EMISAC,
-FECNet, and SSCOR on 32 Bumbarger13 sections, local Z `[777,809)`
-(777–808 inclusive), at 1024×1024 pixels.
+The recommended notebook is `vEMDestripe_Bumbarger_Pipeline_Demo.ipynb`.
+It compares local Bumbarger13 sections 777–808 (32 × 1024 × 1024).
 
-## Run the demo
+## What is evaluated
 
-1. Open the notebook above and connect a Colab runtime.
-2. Use a GPU runtime for live vEMDestripe inference, or a CPU runtime to view
-   the explicitly labelled packaged vEMDestripe output.
-3. Select **Runtime → Run all**. The notebook downloads and verifies the
-   release bundle before loading images.
-4. Inspect XY/XZ/YZ views, Z profiles, source code, and provenance. The default
-   view is **Raw outputs**, without an extra photometric transform.
-5. Download the result archive from the export cell. Raw and globally matched
-   metrics are labelled separately.
+The vEMDestripe pipeline is:
 
-## Which results are computed live?
+`network prediction → whole-volume reference mean/std calibration → save final images → evaluate saved files`
 
-| Method | Default result used by this notebook |
-| --- | --- |
-| vEMDestripe | Live inference with the released checkpoint when enabled and a GPU is available; otherwise the clearly labelled frozen output. |
-| EMISAC | Precomputed output of the **unmodified official Python 2 source** in a recorded legacy environment. This is not a live Colab run. |
-| FECNet | Frozen output from the grayscale EM adaptation and Bumbarger-specific fine-tuning used for the comparison. |
-| SSCOR | Frozen output from the dataset-specific self-supervised comparison run. |
+Only vEMDestripe includes this output-calibration stage. Original, EMISAC,
+FECNet and SSCOR retain their delivered pixels. The evaluator never fits or
+applies a brightness/contrast transformation, including to vEMDestripe.
 
-The notebook recomputes the displayed metrics from the selected images. It
-does not retrain the comparison methods or imply that all methods are rerun
-inside Colab. The source viewer shows the corresponding source entry points;
-the provenance record identifies how the packaged outputs were generated.
+The target is the pooled pixels of the metadata-selected **original reference
+snapshots**, not the fused guidance image, its 16×16 block-averaged version,
+or the test input volume. Each output section uses the same map:
 
-## Official EMISAC reference
+```python
+scale = reference_std / output_std
+bias = reference_mean - scale * output_mean
+lut = np.rint(np.clip(np.arange(256, dtype=np.float32) * scale + bias, 0, 255)).astype(np.uint8)
+final_image = lut[saved_network_output]
+```
 
-The EMISAC output was generated from official commit
-`7a82a17b7bbb4ca14dff2d1c1a4a018fc8cebaf5`, without editing the two upstream
-scripts. The bundle includes the original floating-point H5, the input TIFF,
-source and license, run log, command, environment versions, and SHA256
-manifest. Display PNGs use `clip(rint(H5), 0, 255).astype(uint8)`; they receive
-no additional per-section brightness adjustment.
+The float32 LUT and rounding order match the recorded paper export pipeline.
+No independent per-slice fitting is performed.
 
-This run processes the 32-section input itself, with step 4×4, initial window
-32×32, partitions 4×4, `lm=100`, `fact=1e10`, two workers, and **Z upsampling
-disabled** (`up_fg=0`). These are explicit experiment parameters, not a claim
-to use every upstream default. The recorded legacy environment is not claimed
-to reconstruct every detail of the authors' historical machine.
+## Run
 
-To rerun the original algorithm outside hosted Colab, see
-[official_emisac/REPRODUCE.md](official_emisac/REPRODUCE.md). The earlier
-`vEMDestripe_Bumbarger_Demo.ipynb` and `run_official_emisac.py` remain as
-historical Python 3 compatibility experiments; the compatibility port did not
-pass real-data numerical-equivalence testing and is not the official reference
-in this new demo.
+1. Open the notebook, connect a CPU or GPU runtime, and select **Runtime → Run all**.
+2. Keep `VEM_RUN_MODE = 'published_full_volume'` to reproduce the recorded
+   complete-volume calibration. No GPU is required for this default.
+3. Wait for the versioned asset download and SHA256 checks. The notebook
+   materializes final PNGs, a TIFF and `CALIBRATION.json` before scoring.
+4. Inspect XY/XZ/YZ, brightness profiles, the source viewer and the final table.
+   **Final pipeline outputs** is the primary view. **Network-only diagnostic**
+   changes only the vEMDestripe view, not the evaluation input.
+5. Download the result ZIP containing final outputs, the separate network
+   intermediate, calibration provenance and `metrics_final_outputs.csv`.
 
-## Display and metric scope
+Optional `VEM_RUN_MODE = 'live_demo'` requires a GPU and runs the released
+checkpoint on all 32 supplied sections, followed by the same calibration
+algorithm on this new 32-section output volume. This mode is explicitly a
+different source-statistics context, not the paper's 2651-section calibration.
+Use a fresh runtime when switching modes.
 
-Raw outputs are the default. **Global affine matched** is an optional,
-explicitly labelled view using one scale/bias per entire method volume, never
-independent stretching of individual slices. Both protocols have separately
-labelled metric results; a matched image is not an unchanged algorithm output.
+## Recorded full-volume calibration
 
-This real volume has no slice-wise clean ground truth, so PSNR and SSIM are
-not reported. Demo metrics must not replace the paper's 200-section results.
-`ASID_MAD` measures the median absolute deviation of adjacent whole-section
-mean changes, not the benchmark's pixelwise ASID percentage. `local_ASID`
-uses local jumps divided by local IQR. Cross-plane NIQE uses a labelled 6× Z
-enlargement; native-Z continuity is computed without interpolation. Contrast
-and blur are diagnostics, not biological ground truth.
+The default reproduces the selected **16×16-block checkpoint**:
 
-The displayed section range is shared, but processing context can differ
-between frozen comparison runs; consult the bundle provenance rather than
-assuming that each method was given only these 32 sections.
+| Quantity | Value |
+| --- | ---: |
+| Complete network-output sections | 2651 |
+| Original reference snapshots | 11 |
+| Source mean | 146.69773852119172 |
+| Source population std | 56.64240473977118 |
+| Reference pooled mean | 90.97551380504262 |
+| Reference pooled population std | 35.92554044163754 |
+| Scale | 0.6342516813452413 |
+| Bias | -2.0677735015677996 |
 
-## Release configuration
+All 2651 saved outputs were reread for source histograms and file hashes.
+The 32 displayed network files and 11 reference files were checked against
+their original inventories. Calibration precedes the display crop; the
+32-section window is never used to refit the published map. Evidence is in
+the release's `calibration/` directory.
 
-The notebook is configured for `simple-happy-802/vEMDestripe`, branch `main`,
-release tag `demo-official-v2`, and asset
-`vemdestripe_bumbarger_official_demo_v2.zip`. Code belongs in the repository;
-the image/H5 bundle belongs in the GitHub Release, not ordinary Git history.
-Its archive SHA256 is pinned by the notebook, and `manifest.json` records the
-individual bundled files.
+## Baselines and limits
 
-See [发布与使用.md](发布与使用.md) for publishing and reader instructions,
-[THIRD_PARTY_METHODS.md](THIRD_PARTY_METHODS.md) for baseline provenance, and
-[DATA_LICENSE.md](DATA_LICENSE.md) for data attribution. A local check is not
-a claim that the hosted Colab runtime has been tested; after publishing, run
-the public notebook from a fresh Colab session before citing its link.
+- EMISAC is the verified unmodified official Python-2 source in a fixed legacy
+  environment, precomputed on the 32-section input. No additional calibration
+  is applied. Original H5, source/GPL, explicit parameters and logs remain in
+  `provenance/emisac_official/`. See [official_emisac/REPRODUCE.md](official_emisac/REPRODUCE.md).
+- FECNet is the delivered grayscale EM adaptation/Bumbarger fine-tuned output;
+  SSCOR is its dataset-specific seed-42 comparison output. They are not live
+  training runs in this notebook, and do not receive vEMDestripe's calibration.
+- This real dataset has no paired clean target. No PSNR/SSIM is reported.
+  NIQE, native-Z ASID_MAD/local-ASID/Z-HF and contrast/blur are diagnostics,
+  not biological ground truth. Cross-plane NIQE/views explicitly enlarge Z 6×.
+- The 32-section demonstration is not the paper's full benchmark. Shared display
+  sections do not imply identical original processing extents for all methods.
+
+Code is pinned to `demo-reference-v3`; the Release asset is
+`vemdestripe_bumbarger_reference_pipeline_v3.zip`, with ZIP SHA256 pinned in
+the notebook and every file checked against its manifest. Previous v2 and
+Python-3-port notebooks remain historical, not the recommended complete pipeline.
+
+See [发布与使用.md](发布与使用.md), [THIRD_PARTY_METHODS.md](THIRD_PARTY_METHODS.md)
+and [DATA_LICENSE.md](DATA_LICENSE.md). Local execution does not establish that
+the Google-hosted GPU runtime has been tested.

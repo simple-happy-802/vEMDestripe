@@ -71,3 +71,20 @@ For prediction \(\hat I\) and clean target \(I\), training minimizes
 ## Native and tiled inference
 
 An exact 1024×1024 input with a 1024-pixel inference window bypasses tiling. Other sizes are reflection padded and processed using overlapping 1024×1024 windows. With the default overlap ratio of 0.25, interior overlaps use cosine weights, while weights on the exterior image boundary are set to one. The latter prevents zero-weight border pixels and the corresponding one-pixel black-edge artifact.
+
+
+## Final-output brightness and contrast calibration
+
+The complete vEMDestripe pipeline includes one reference-based photometric map
+after the network has produced all saved uint8 output sections. Source moments
+pool every voxel in that output volume. Real-data target moments pool the
+selected original reference snapshots before mean/std calculation, never the
+fused or block-averaged guidance image. Population standard deviations are used.
+
+`scale = target_std / output_std`, `bias = target_mean - scale * output_mean`.
+All slices use the same float32 256-level LUT with clip → rint → uint8, matching
+the audited export code. Network intermediates remain in `network_raw/`;
+final files and `CALIBRATION.json` are written separately before scoring.
+Baselines do not receive this stage. Evaluation only reads final saved pixels.
+For synthetic studies, an explicitly supplied full clean target is privileged
+calibration and must be reported as such, not as reference-free deployment.

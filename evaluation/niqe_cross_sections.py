@@ -22,8 +22,8 @@ import numpy as np
 
 from .niqe import fit_pristine_model, niqe_score, niqe_scores_gpu, summary, torch
 from .benchmark import (
-    COLORS, LABELS, MATCHED_METHOD_BY_SOURCE, METHODS, PLOT_LABELS,
-    add_original_global_matches, cross_section_at, ground_truth, load,
+    COLORS, LABELS, METHODS, PLOT_LABELS,
+    cross_section_at, ground_truth, load,
     stacks_for_dataset, uses_z6_resampling,
 )
 
@@ -163,7 +163,6 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=0, help="0 selects a conservative CPU-thread count.")
     parser.add_argument("--engine", choices=("auto", "cpu", "gpu"), default="auto", help="auto uses CUDA when available.")
     parser.add_argument("--gpu-batch-size", type=int, default=8)
-    parser.add_argument("--with-global-match", action="store_true", help="Also plot five Original-global-matched method outputs.")
     args = parser.parse_args()
     if args.train_first_slices < 1 or args.test_z_start < args.train_first_slices:
         raise ValueError("The held-out test start must be at or after the NIQE training-slice count.")
@@ -196,10 +195,7 @@ def main() -> None:
             else:
                 mu, cov, patches = fit_pristine_model((gt.read(i) for i in train_ids), args.patch_size, args.sharpness_fraction)
                 np.savez_compressed(model_path, mu=mu, cov=cov, patches=np.asarray(patches))
-            match_sources = tuple(m for m in MATCHED_METHOD_BY_SOURCE if not requested_methods or m in requested_methods) if args.with_global_match else ()
-            matches = add_original_global_matches(stacks, match_sources, args.test_z_start)
             methods = [method for method in METHODS if stacks.get(method) is not None and (not requested_methods or method in requested_methods)]
-            matched_methods = ["Original"] + [entry["method"] for entry in matches]
             ratio = 6.0 if uses_z6_resampling(dataset) else 1.0
             gpu_validation = None
             if engine == "gpu":
@@ -210,7 +206,7 @@ def main() -> None:
                 gpu_validation = {"z_indices": validation_ids, "cpu": cpu_values, "gpu": gpu_values,
                                   "max_absolute_difference": max(abs(a - b) for a, b in zip(cpu_values, gpu_values))}
             profiles: Dict[str, Dict[str, object]] = {}
-            for method in methods + [m for m in matched_methods if m != "Original"]:
+            for method in methods:
                 stack = stacks[method]
                 tag = f"{dataset}_{method}_z{args.test_z_start}_border{args.cross_plane_border}_patch{args.patch_size}_{engine}"
                 xy_z, xy_score = random_xy_score(stack, args.test_z_start, args.xy_seed, mu, cov, args.patch_size, cache_dir / f"{tag}_xy_seed{args.xy_seed}.npz", engine, args.gpu_batch_size)
@@ -226,8 +222,6 @@ def main() -> None:
                               "z_resampling_for_cross_sections": ratio, "position_count": len(positions), "engine": engine}
                     all_summary.append(record)
             all_samples += histogram_page(dataset, profiles, methods, output, pdf, "raw_methods")
-            if len(matched_methods) > 1:
-                all_samples += histogram_page(dataset, profiles, matched_methods, output, pdf, "original_global_matched")
             metadata["datasets"][dataset] = {"clean_tiff": str(gt.path), "training_slice_ids": train_ids,
                                                "selected_pristine_patches": patches, "xy_random_z_index": profiles["Original"]["xy_z_index"],
                                                "test_z_count": stacks["Original"].count - args.test_z_start,

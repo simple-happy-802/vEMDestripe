@@ -1,5 +1,5 @@
 #!/bin/bash
-# Publication-oriented matched evaluation for vEMDestripe and available baselines.
+# Read-only saved-final-output evaluation (no normalization) for vEMDestripe and available baselines.
 
 #SBATCH -J vem_eval
 #SBATCH -p a100

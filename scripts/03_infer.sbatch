@@ -1,5 +1,6 @@
 #!/bin/bash
-# Batch inference over direct children of test_data.
+# Complete pipeline: network -> whole-volume reference calibration -> saved final files.
+# network_raw/ is retained; evaluation reads the final output root.
 
 #SBATCH -J vem_infer
 #SBATCH -p a100
@@ -99,7 +100,7 @@ for dataset_dir in "${TEST_DATA_ROOT}"/*; do
         --image_size 1024 \
         --inference_size 1024 \
         --overlap_ratio 0.25 \
-        --no_z_context --no_z_postprocess --no_preview \
+        --no_sliding_window --no_z_context --no_z_postprocess --no_preview \
         --output_format png --disable_progress_bar
     processed=$((processed + 1))
 done

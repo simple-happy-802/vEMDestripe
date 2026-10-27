@@ -12,6 +12,8 @@ import sys
 import argparse
 import json
 import hashlib
+from pathlib import Path
+import shutil
 import numpy as np
 import torch
 import cv2
@@ -896,6 +898,57 @@ class VEMDestripeInferencer:
         print(f"预览图保存在: {preview_dir}")
 
 
+def run_directory_pipeline(inferencer, args):
+    """Network -> all-volume reference calibration -> saved final outputs.
+
+    Evaluation is a separate read-only stage. Network uint8 files are kept in
+    network_raw/; only final files are written to the requested output root.
+    """
+    final_root = Path(args.output_dir)
+    calibrate = not args.no_photometric_calibration
+    if calibrate and (args.no_reference or inferencer.reference_preprocess == 'self'):
+        raise ValueError('Reference calibration requires original references; use --no_photometric_calibration for a raw ablation')
+    if calibrate and args.max_images is not None:
+        raise ValueError('Whole-volume calibration cannot use --max_images. Infer every slice or explicitly request --no_photometric_calibration')
+    raw_root = final_root / 'network_raw' if calibrate else final_root
+    if calibrate and (raw_root.exists() or (final_root/'CALIBRATION.json').exists()
+                      or any(final_root.glob('*_deflickered.*'))):
+        raise FileExistsError('Choose a new output directory; existing network/final results are not overwritten')
+    inferencer.process_directory(
+        input_dir=args.input_dir, output_dir=str(raw_root), reference=args.reference,
+        num_reference=args.num_reference, save_preview=False if calibrate else not args.no_preview,
+        use_sliding_window=not args.no_sliding_window, output_format=args.output_format,
+        use_z_context=bool(args.use_z_context and not args.no_z_context),
+        z_sequence_length=args.z_sequence_length, no_reference=args.no_reference,
+        max_images=args.max_images)
+    if not calibrate:
+        return
+    from vemdestripe.calibration import calibrate_directory
+    info = json.loads((raw_root/'processing_info.json').read_text(encoding='utf-8'))
+    selected = info['reference_indices']
+    if args.reference:
+        ref_root = Path(args.reference)
+        original_refs = [ref_root/name for name in selected] if ref_root.is_dir() else [ref_root]
+    else:
+        patterns = {'.png', '.tif', '.tiff', '.jpg', '.jpeg'}
+        inputs = natsorted([str(p) for p in Path(args.input_dir).iterdir()
+                            if p.is_file() and p.suffix.lower() in patterns])
+        original_refs = [Path(inputs[int(index)]) for index in selected]
+    primary = '*_deflickered.tif' if args.output_format == 'tif' else '*_deflickered.png'
+    patterns = ('*_deflickered.png', '*_deflickered.tif') if args.output_format == 'both' else (primary,)
+    record = calibrate_directory(raw_root, final_root, original_refs,
+        input_pattern=primary, write_patterns=patterns, expected_count=info['num_input_images_total'])
+    info.update(output_pipeline='network_then_whole_volume_reference_calibration',
+                photometric_calibration_applied=True, network_raw_directory='network_raw',
+                calibration_record='CALIBRATION.json', calibration_source_sections=record['source_statistics']['section_count'],
+                calibration_target='pooled selected original reference snapshots, not reference.png',
+                final_output_note='Evaluate the saved *_deflickered files in this directory; never normalize again')
+    (final_root/'processing_info.json').write_text(json.dumps(info,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+    if (raw_root/'reference.png').is_file():
+        shutil.copy2(raw_root/'reference.png',final_root/'reference.png')
+    print('vEMDestripe complete: network_raw retained; reference-calibrated final images saved to',final_root)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -989,7 +1042,13 @@ def parse_args():
     parser.add_argument('--disable_progress_bar', action='store_true',
                         help='Disable tqdm output in Slurm logs')
 
+    parser.add_argument('--no_photometric_calibration', action='store_true',
+                        help='Export network-only images; default directory inference saves whole-volume reference-calibrated final output')
+
     args = parser.parse_args()
+
+    if args.input_dir is None and not args.no_photometric_calibration:
+        parser.error('Single-image input cannot fit a whole volume; use --no_photometric_calibration or directory mode')
 
     if args.input_dir is not None and args.output_dir is not None:
         pass
@@ -1057,19 +1116,7 @@ def main():
         print(f"\n目录模式:")
         print(f"  输入目录: {args.input_dir}")
         print(f"  输出目录: {args.output_dir}")
-        inferencer.process_directory(
-            input_dir=args.input_dir,
-            output_dir=args.output_dir,
-            reference=args.reference,
-            num_reference=args.num_reference,
-            save_preview=not args.no_preview,
-            use_sliding_window=use_sliding_window,
-            output_format=args.output_format,
-            use_z_context=use_z_context,
-            z_sequence_length=args.z_sequence_length,
-            no_reference=args.no_reference,
-            max_images=args.max_images
-        )
+        run_directory_pipeline(inferencer, args)
     else:
         print(f"\n单文件模式:")
         print(f"  输入文件: {args.input}")
