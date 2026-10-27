@@ -4,13 +4,15 @@
 
 ## Google Colab 在线对比演示
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Official_Demo.ipynb)
 
-该 Notebook 使用固定的 32 张 Bumbarger13 切片，现场运行 vEMDestripe 和
-EMISAC 作者官方仓库的固定版本，并与论文实验产生的 FECNet、SSCOR 结果进行
-对比。它可以交互查看 XY/XZ/YZ 结果并重新计算真实体数据指标。Bumbarger13
-没有逐切片配对的干净标签，因此演示不会错误地报告 PSNR 或 SSIM。发布前的
-一次性配置和第三方方法来源见 [colab/README.md](colab/README.md)。
+新版 Notebook 使用固定的 32 张 Bumbarger13 切片。vEMDestripe 可使用发布权重
+现场推理；没有 GPU 时可查看明确标记的冻结输出。EMISAC 展示**未修改的官方源码
+在固定旧环境中生成的预计算结果**，FECNet、SSCOR 也使用各自已记录配置的冻结结果，
+不将它们描述为本次 Colab 现场运行。页面可查看源码与来源记录，交互比较 XY/XZ/YZ
+图像并重新计算指标。默认展示原始输出，可另选明确标记的整体亮度匹配视图。
+Bumbarger13 没有逐片配对的干净标签，因此不报告 PSNR/SSIM；32 张演示指标不代替
+论文完整评估。使用与发布说明见 [colab/README.md](colab/README.md)。
 
 ## 最重要的复现说明
 

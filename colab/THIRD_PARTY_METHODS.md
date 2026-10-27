@@ -1,50 +1,58 @@
 # Third-party methods in the Bumbarger13 demo
 
-The comparison notebook keeps third-party code separate from vEMDestripe. It
-links to the authors' repositories, runs EMISAC directly from the authors'
-official source, and uses frozen outputs only where rerunning the method would
-require missing task-specific weights or hours of dataset-specific training.
-The frozen outputs are demonstration data, not code copied from repositories.
+The recommended notebook is `vEMDestripe_Bumbarger_Official_Demo.ipynb`.
+It displays source entry points and records which images were generated live
+and which are immutable precomputed artifacts. Showing source does not imply
+that every method is rerun inside the notebook.
 
-| Method | Public source | License status | Demo provenance |
-|---|---|---|---|
-| EMISAC | <https://github.com/azadis/EMISAC> | GPL-3.0 | Cloned and run live from official commit `7a82a17b7bbb4ca14dff2d1c1a4a018fc8cebaf5` on the 32-section demo window. |
-| FECNet | <https://github.com/KevinJ-Huang/FECNet> | No license file was visible in the public repository when this package was prepared. Do not redistribute its source without permission. | Frozen output from the grayscale EM adaptation and Bumbarger-specific fine-tuning used in the comparison. |
-| SSCOR | <https://github.com/AI-XPM-group/SSCOR> | Apache-2.0 in the checked repository | Frozen output from dataset-specific self-supervised training, seed 42. |
+| Method | Public source | License status recorded during packaging | Demo provenance |
+| --- | --- | --- | --- |
+| EMISAC | <https://github.com/azadis/EMISAC> | GPL-3.0; bundled original scripts retain the upstream license. | Unmodified official commit `7a82a17b7bbb4ca14dff2d1c1a4a018fc8cebaf5`, run in the recorded legacy environment on the 32-section demo input. Its output is precomputed, not a live Colab run. |
+| FECNet | <https://github.com/KevinJ-Huang/FECNet> | No license file was visible in the checked public repository; source is linked rather than redistributed. | Frozen output from the grayscale EM adaptation and Bumbarger-specific fine-tuning used for the comparison, not an unmodified default-weight RGB run. |
+| SSCOR | <https://github.com/AI-XPM-group/SSCOR> | Apache-2.0 in the checked repository. | Frozen output from dataset-specific self-supervised training, seed 42. |
 
-## EMISAC compatibility policy
+## EMISAC: original-source reference
 
-The upstream EMISAC scripts target Python 2 and historical NumPy, SciPy,
-scikit-image, Pillow, and h5py APIs. The notebook first verifies the pinned Git
-commit, then writes a temporary Python-3-compatible working copy. Its patch is
-shown in the notebook and is limited to:
+The release bundle retains the input TIFF, original floating-point result H5,
+unmodified upstream source and license, command, run log, dependency versions,
+and checksums under `provenance/emisac_official/`. The PNGs shown in the
+notebook are a fixed quantization of this H5, without per-section stretching.
+The manifest lets readers verify both the source and result files.
 
-- Python 2 print/iteration syntax;
-- imports and argument names removed by current dependencies;
-- deprecated NumPy/h5py aliases;
-- integer divisions that were integer-valued under Python 2; and
-- invoking the child script with the active Python interpreter.
+The run uses step 4×4, initial window 32×32, partitions 4×4, `lm=100`,
+`fact=1e10`, two workers, and `up_fg=0`. In particular, Z upsampling is
+disabled; this is an explicitly specified configuration, not every upstream
+default. The fixed legacy dependency environment is a runnable reference,
+not a claim to restore the authors' entire historical machine.
 
-The pinned Git commit and history remain unchanged; the two legacy scripts in
-its disposable working tree receive only the compatibility edits listed above.
-The objective, processing stages, default algorithm, and experiment parameters
-are not replaced by the local GPU rewrite. The notebook records the source URL,
-commit, pre-/post-patch source hashes, compatibility-manifest hash, and executed
-command with the result.
+See [official_emisac/REPRODUCE.md](official_emisac/REPRODUCE.md) to rerun the
+original algorithm. The new notebook does not require changing the hosted
+Colab system Python or installing historical packages into its main kernel.
 
-## Important reproducibility limits
+The previous notebook's Python 3 compatibility runner remains available for
+historical experiments, but real-data regression testing found nonzero output
+differences from the unmodified-source legacy reference. It must not be
+described as numerically equivalent or substituted for this official-reference
+artifact. The local GPU rewrite is also not used for this EMISAC baseline.
 
-- The live EMISAC demonstration is intentionally limited to the same 32
-  sections shown by the notebook. A complete 2,000-section optimization is too
-  expensive for a quick free-Colab demonstration and is not implied by this
-  run.
-- The original FECNet project targets RGB exposure correction. The paper
-  comparison used a one-channel adaptation with dataset-specific fine-tuning.
-  Its frozen Bumbarger checkpoint must be released separately before claiming
-  that readers can rerun this branch from weights.
-- SSCOR learns from each test volume. The Bumbarger run used 200 epochs;
-  training it inside the quick notebook would take hours and would no longer
-  be a click-through demonstration.
-- The notebook therefore runs official EMISAC and vEMDestripe live. FECNet and
-  SSCOR remain immutable comparison artifacts with explicit provenance; the
-  notebook does not pretend to rerun a different or unavailable configuration.
+## Scope of the comparison
+
+- Displayed data are local sections 777–808 inclusive, a 32-section window.
+  EMISAC was given that 32-section input. Other packaged outputs retain their
+  recorded processing context; a common displayed crop does not prove a
+  common original input extent.
+- The original FECNet project targets RGB exposure correction. The comparison
+  used a one-channel adaptation and task-specific fine-tuning. Its Bumbarger
+  checkpoint must be available separately before readers can rerun that exact
+  branch from weights; the demo does not replace it with unrelated weights.
+- SSCOR learns from each test volume. The packaged Bumbarger comparison used
+  200 epochs; the quick notebook does not repeat that training.
+- vEMDestripe can run its released checkpoint live when enabled with a GPU.
+  If a packaged fallback is selected, it is labelled as precomputed.
+- Raw algorithm output is the default display. Optional global affine
+  matching uses one transform per volume and is labelled separately, including
+  in metric exports. It is not part of the unchanged algorithm output.
+- Bumbarger13 has no paired clean target. The demo therefore omits PSNR/SSIM;
+  its 32-section metrics must not be presented as the paper's full evaluation.
+
+Dataset attribution is documented in [DATA_LICENSE.md](DATA_LICENSE.md).
