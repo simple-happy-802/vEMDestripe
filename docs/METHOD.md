@@ -73,18 +73,18 @@ For prediction \(\hat I\) and clean target \(I\), training minimizes
 An exact 1024×1024 input with a 1024-pixel inference window bypasses tiling. Other sizes are reflection padded and processed using overlapping 1024×1024 windows. With the default overlap ratio of 0.25, interior overlaps use cosine weights, while weights on the exterior image boundary are set to one. The latter prevents zero-weight border pixels and the corresponding one-pixel black-edge artifact.
 
 
-## Final-output brightness and contrast calibration
+## Original inference postprocessing
 
-The complete vEMDestripe pipeline includes one reference-based photometric map
-after the network has produced all saved uint8 output sections. Source moments
-pool every voxel in that output volume. Real-data target moments pool the
-selected original reference snapshots before mean/std calculation, never the
-fused or block-averaged guidance image. Population standard deviations are used.
+The original `infer.py` command runs postprocessing on the saved uint8
+predictions using the original reference snapshots. It writes final images
+and `CALIBRATION.json` before evaluation. Use `--no_photometric_calibration`
+to save network predictions alone, including for single-section input.
 
-`scale = target_std / output_std`, `bias = target_mean - scale * output_mean`.
-All slices use the same float32 256-level LUT with clip → rint → uint8, matching
-the audited export code. Network intermediates remain in `network_raw/`;
-final files and `CALIBRATION.json` are written separately before scoring.
-Baselines do not receive this stage. Evaluation only reads final saved pixels.
-For synthetic studies, an explicitly supplied full clean target is privileged
-calibration and must be reported as such, not as reference-free deployment.
+The `calibrate_volume.py` command runs the same output step on a saved
+volume. Pass the recorded reference metadata to reproduce the reference
+selection. If using `--target-clean-volume` for a paired simulation, report
+the use of clean target information with the results.
+
+The [optimized workflow](OPTIMIZED_INFERENCE.md) uses fixed E1 weights and
+its own volume postprocessing. Record the workflow and checkpoint with
+each result.

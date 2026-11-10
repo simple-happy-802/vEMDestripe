@@ -26,21 +26,26 @@ where `Lphoto` matches global and local mean/standard-deviation statistics at 32
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Pipeline_Demo.ipynb)
 
-The v4 demo maps vEMDestripe brightness/contrast to the fixed user-selected
-**Original `slice_00793.png`**, saves final outputs, then evaluates those files.
-Default source statistics cover all 2651 saved network-output sections; the
-same map is applied before cropping local Z 777–808 for display. Optional
-live GPU mode uses a separate complete 32-section source volume and the same
-fixed target. Only vEMDestripe is transformed; delivered EMISAC/FECNet/SSCOR
-pixels remain unchanged, and the evaluator never normalizes any method.
+The Bumbarger13 notebook shows saved results alongside the original input and
+other methods. It runs vEMDestripe's demo postprocessing before exporting
+the results for evaluation. The default mode uses saved network output and
+runs on CPU. The optional live mode runs inference on a 32-section volume
+with a GPU. See [the demo guide](colab/README.md) for the source and display
+windows and the download options.
 
-This is a demonstration-specific target, not spatial registration or the
-paper's original-reference-pool protocol. Training and the production
-`infer.py` default remain unchanged. EMISAC is still the verified unchanged-official-source
-legacy-environment precomputed result. See [colab/README.md](colab/README.md).
-This real dataset has no paired clean target, and demo metrics are not the
-full-paper benchmark. Code is pinned to `demo-original-target-v4`, reusing the
-immutable v3 data asset. Previous version tags remain unchanged.
+## Optimized inference
+
+Run the fixed E1 model on a directory of numbered grayscale PNG sections.
+The command includes inference and postprocessing and records the total
+processing time. The block32 checkpoint ships with the repository.
+
+```bash
+python infer_optimized.py --input-dir input/volume_a --output-dir results/volume_a --device cuda
+```
+
+Use `--device cpu` for a CPU run. See the [optimized inference guide](docs/OPTIMIZED_INFERENCE.md)
+for input requirements and output files. The [web demo](demo/README.md) accepts a
+ZIP of PNG sections and displays matched XY, XZ and YZ views.
 
 ## Repository layout
 
@@ -54,7 +59,8 @@ vEMDestripe/
 ├── tests/                  lightweight reproducibility tests
 ├── prepare_training_data.py public data-generation convenience entry point
 ├── train.py                fixed training entry point
-└── infer.py                directory or TIFF inference entry point
+├── infer.py                original directory or TIFF workflow
+└── infer_optimized.py      fixed E1 optimized PNG workflow
 ```
 
 ## Installation
@@ -142,29 +148,12 @@ python infer.py \
   --no_z_context --no_z_postprocess --no_preview
 ```
 
-Directory inference now runs the complete pipeline by default. Network-only
-uint8 predictions are retained in `output_dir/network_raw/`; one mean/std map
-is fitted over **every output voxel** to the pooled pixels of the selected
-**original reference snapshots**, not `reference.png`. Calibrated final
-`*_deflickered.png` images and `CALIBRATION.json` are saved in `output_dir/`.
-Evaluation must read that final directory and must not normalize again.
-Use a new output directory; existing results are not overwritten.
-
-For a network-only ablation, explicitly pass `--no_photometric_calibration`.
-Do not use `--max_images` with full-volume calibration. Single-image input
-requires the raw-only flag because it cannot establish full-volume statistics.
-For already saved full-volume predictions, run the independent export stage:
-
-```bash
-python calibrate_volume.py --input-dir /path/to/all_network_outputs \
-  --reference-dir /path/to/original_reference_snapshots \
-  --reference-metadata /path/to/processing_info.json \
-  --output-dir /path/to/new_final_outputs --output-stack /path/to/final_volume.tif
-```
-
-Use the exact recorded reference selection when metadata is available. The
-explicit synthetic-only `--target-clean-volume clean.tif` option reproduces
-privileged clean-target calibration; it is not an unlabeled deployment claim.
+The original `infer.py` workflow uses the block16 checkpoint and runs
+postprocessing after directory inference. It writes intermediate predictions
+to `network_raw/` and final `*_deflickered.png` files and a processing record
+to the output directory. Use a fresh output directory, and use the final
+files for evaluation. See [the method guide](docs/METHOD.md#original-inference-postprocessing)
+for the original workflow and its command options.
 
 Exactly 1024×1024 inputs use one whole-image pass. Other sizes use reflection-padded, 25%-overlap tiled inference; exterior blend weights are forced to one so the cosine window cannot create a one-pixel black border.
 

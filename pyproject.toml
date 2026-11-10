@@ -24,12 +24,14 @@ dependencies = [
   "Pillow>=10",
   "tqdm>=4.66",
   "natsort>=8.4",
+  "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
 train = ["tensorboard>=2.14"]
-evaluation = ["scipy>=1.10", "scikit-image>=0.22", "matplotlib>=3.7"]
+evaluation = ["scikit-image>=0.22", "matplotlib>=3.7"]
 test = ["pytest>=7.4"]
+demo = ["gradio>=6.31,<7"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -37,4 +39,3 @@ include = ["vemdestripe*", "data_generation*", "evaluation*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-

@@ -42,3 +42,6 @@ release_assets/
 
 # The selected portable 16x16 paper checkpoint is small enough for GitHub.
 !checkpoints/vemdestripe_seed42/best.pth
+
+# Portable fixed E1 inference weights.
+!checkpoints/vemdestripe_e1_block32/best.pth

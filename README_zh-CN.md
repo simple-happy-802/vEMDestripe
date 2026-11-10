@@ -6,18 +6,24 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/simple-happy-802/vEMDestripe/blob/main/colab/vEMDestripe_Bumbarger_Pipeline_Demo.ipynb)
 
-新版演示为：**网络输出 → 整卷均值／标准差匹配到固定 Original `slice_00793.png` → 保存最终图像 → 评估**。
-这一步只属于 vEMDestripe；EMISAC、FECNet、SSCOR 不额外校准。评估程序只读最终文件，不归一化。
-默认源统计仍使用完整 2651 张网络输出，目标只取用户指定的 Original-793 全部像素，
-整卷应用同一映射后截取 32 张展示。不要求 GPU；可选现场模式使用全部 32 张新输出
-作为源统计，目标仍固定为 Original-793，并明确区分这两个上下文。
-这次只改演示目标，不修改训练或正式 `infer.py` 的默认原始参考池校准流程；
-亮度／对比度匹配不是空间配准，也不冒充此前论文参考池协议。旧版本标签保留。
-EMISAC 仍是未改官方源码在固定旧环境生成并验证的结果。详见 [colab/README.md](colab/README.md)。
+演示会保存 vEMDestripe 推理后处理的结果，提供同位置 XY、XZ、YZ 查看、
+对比指标和 ZIP 下载。默认模式用已保存的网络输出，在 CPU 上运行。
+GPU 模式可现场推理 32 张切片。详见 [Colab 演示说明](colab/README.md)。
 
-## 最重要的复现说明
+## 优化版推理
 
-项目已将最终选择的论文权重导出到 `checkpoints/vemdestripe_seed42/best.pth`。该权重是使用 16×16 参考图分块独立重训得到的，不是把 32×32 权重在推理时临时改成 16×16。对应推理脚本从参考目录均匀选择最多 16 张切片，先用 `float32` 求均值，再进行 16×16 非重叠分块均值。当前论文草稿写的是 10 张参考切片，因此仍需统一参考切片数量；详见 [docs/PAPER_CODE_ALIGNMENT.md](docs/PAPER_CODE_ALIGNMENT.md)。
+把同一体数据的 8 位灰度 PNG 按切片编号放在一个目录。仓库附带固定 E1 权重，
+下方命令完成推理和后处理，并保存最终 PNG 和处理用时。
+
+```bash
+python infer_optimized.py --input-dir input/volume_a --output-dir results/volume_a --device cuda
+```
+
+在 CPU 上使用 `--device cpu`。详见 [优化推理说明](docs/OPTIMIZED_INFERENCE.md)
+和 [网页演示](demo/README.md)。
+
+以下训练及 Slurm 脚本对应仓库的原版 block16 流程。使用这些脚本复现实验时，
+请核对参考切片数量与权重版本，见 [复现说明](docs/PAPER_CODE_ALIGNMENT.md)。
 
 ## 服务器快速运行
 
@@ -73,22 +79,8 @@ sbatch --export=ALL,MODEL_PATH=/path/to/best.pth,TEST_DATA_ROOT=/path/to/test_me
 
 训练与推理细节分别见 [docs/DATA.md](docs/DATA.md)、[docs/METHOD.md](docs/METHOD.md) 和 [docs/EVALUATION.md](docs/EVALUATION.md)。
 
-## 最终输出和评估分离
+## 最终输出和评估
 
-新版 `infer.py` 目录模式默认保留 `network_raw/` 中间结果，并把校准后的最终
-`*_deflickered.png` 保存到指定输出目录根部，同时记录 `CALIBRATION.json`。
-源统计来自全部输出像素，目标来自本次实际选择的原始参考切片像素池，不是融合图或分块图。
-每片应用同一张 256 级映射表；不能逐切片拟合，也不要只用评估窗口重新拟合。
-
-已生成的完整网络输出可以单独校准导出：
-
-```bash
-python calibrate_volume.py --input-dir /path/to/all_network_outputs \
-  --reference-dir /path/to/original_reference_snapshots \
-  --reference-metadata /path/to/processing_info.json \
-  --output-dir /path/to/new_final_outputs --output-stack /path/to/final.tif
-```
-
-`python -m evaluation.evaluate` 和 Slurm 评估脚本只计算已保存文件的指标，不做亮度匹配。
-其他方法保持原交付像素。网络原始输出消融请显式指定 `--no_photometric_calibration`。
-不要在默认整卷校准下指定 `--max_images`。输出目录已有结果时请改用新目录。
+原版 `infer.py` 目录模式在推理后执行输出处理。最终 PNG 写入指定输出目录，
+中间文件保存在 `network_raw/`。评估时读取最终文件。命令选项见
+[原版推理说明](docs/METHOD.md#original-inference-postprocessing)。
