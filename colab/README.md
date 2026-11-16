@@ -52,5 +52,5 @@ uses `vemdestripe_bumbarger_reference_pipeline_v3.zip` from the immutable
 `9aa8bdbf82dbbafb4473df73abdcc2dea6a9853c4c6aa135cb4a8809f61ff669`.
 Each bundled file is checked against its manifest.
 
-See [发布与使用.md](发布与使用.md), [THIRD_PARTY_METHODS.md](THIRD_PARTY_METHODS.md)
+See [THIRD_PARTY_METHODS.md](THIRD_PARTY_METHODS.md)
 and [DATA_LICENSE.md](DATA_LICENSE.md) for release, implementation and data details.
