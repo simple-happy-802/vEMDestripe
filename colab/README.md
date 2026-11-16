@@ -18,7 +18,8 @@ source code, a comparison table and a downloadable result ZIP.
 3. Wait for the versioned asset download, SHA256 checks and inference postprocessing.
 4. Inspect **Final pipeline outputs** and the comparison table. The
    **Network-only diagnostic** view shows the vEMDestripe intermediate.
-5. Download final images, processing receipts and `metrics_final_outputs.csv`.
+5. Download final images, processing receipts, `metrics_final_outputs.csv`
+   and the per-section scores and coordinates in `metrics_niqe_sections.csv`.
 
 Optional `VEM_RUN_MODE = 'live_demo'` runs the released checkpoint on the
 32 supplied sections with a GPU, then runs inference postprocessing.
@@ -40,11 +41,12 @@ network intermediates and the versioned source records.
   See [reproduction instructions](official_emisac/REPRODUCE.md).
 - FECNet uses the delivered grayscale EM adaptation and Bumbarger fine-tuned
   output. SSCOR uses its dataset-specific seed-42 output.
-- The table reports NIQE, native-Z continuity diagnostics, contrast and blur
-  for the 32-section demo. Cross-plane evaluation and views label their 6× Z
-  enlargement. The real dataset provides unpaired reference sections.
+- The table reports clean-kidney-reference NIQE in XY, XZ and YZ and native-Z
+  ASID for the 32-section demo. XY uses the acquired pixels. XZ and YZ use
+  physical Z reslicing at `50 / 3.9 ≈ 12.82×` for display and evaluation.
+  See the [NIQE protocol](NIQE_PROTOCOL.md) for the reference and sampling.
 
-The executable source is pinned to **`optimized-inference-v1`**. The notebook
+The executable source is pinned to **`bumbarger-demo-metrics-v2`**. The notebook
 uses `vemdestripe_bumbarger_reference_pipeline_v3.zip` from the immutable
 **`demo-reference-v3`** release, with ZIP SHA256
 `9aa8bdbf82dbbafb4473df73abdcc2dea6a9853c4c6aa135cb4a8809f61ff669`.

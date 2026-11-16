@@ -1,0 +1,17 @@
+# Bumbarger13 demo evaluation
+
+The demo evaluates the saved 8-bit grayscale PNGs of the original and all four restoration methods on local Z `[777,809)`. Each method uses the same fixed section and crop coordinates. The evaluator reads the stored intensities directly. vEMDestripe's existing demo calibration belongs to its output pipeline.
+
+| Measure | Sampling and interpretation |
+| --- | --- |
+| Clean-kidney-reference NIQE, XY | Eight equally spaced native XY sections, whole width and height. Lower scores indicate closer agreement with the reference patch statistics. |
+| Clean-kidney-reference NIQE, XZ and YZ | Six equally spaced positions per axis over `[32,992)`, with the lateral dimension also cropped to `[32,992)`. Only Z is linearly resampled at `50 / 3.9` with endpoint alignment, using the same geometry as the display. The display shows the full lateral field. |
+| ASID | On the native 32 layers, take the mean intensity of each layer, compute signed adjacent differences, then take their median absolute deviation around their median. The unit is the original 8-bit gray level. |
+
+The [source mip-0 metadata](https://open-neurodata.s3.amazonaws.com/bumbarger/bumbarger13/image/info) gives XYZ voxel spacing of 3.9, 3.9 and 50 nm. A 32-row native orthogonal section produces 410 rows at the nominal physical resampling ratio. The data outside the 32 acquired layers are outside the demo evaluation. The horizontal pixel spacing stays at 3.9 nm.
+
+NIQE trims the plane from its origin to a multiple of 96 pixels in each dimension. A normalized 7×7 Gaussian window with standard deviation 7/6 gives local means and variances for mean subtraction and contrast normalization. The 96×96 patches and corresponding 48×48 antialiased half-scale patches produce 36 features per patch using asymmetric generalized Gaussian fits to the normalized intensities and four directional products. The score is the distance between the test and frozen reference feature means using the pseudoinverse of the mean of their covariance matrices. At least two patches are required. The per-plane CSV records patch counts and flags counts below 37. The summary averages the available plane scores within each axis. [Mittal, Soundararajan and Bovik, IEEE Signal Processing Letters, 2013](https://doi.org/10.1109/LSP.2012.2227726)
+
+The bundled NPZ contains the frozen feature mean and covariance for each axis. The reference was fitted on 32 planes per axis of an 8 nm isotropic clean mouse kidney FIB-SEM subvolume, using only local Z `[800,1200)`. Reference patches exceeded 75% of the maximum patch mean local standard deviation of their respective reference plane. XY, XZ and YZ used 1,965, 859 and 889 patches. The TIFF was the uint8 crop X `[10000,11024)`, Y `[5000,6024)`, Z `[5000,6600)` with SHA-256 `f4e3824b4add7d0fb52079e8af3b72a092c3a74af52a5ab1893d8b59e66f16b7`. Scores measure statistical agreement with that reference. The demo has no paired clean Bumbarger13 target.
+
+Reference data by Song Pang, Wei-Ping Li, Davis Bennett, Eric T. Trautman, Stephan Preibisch, Michael J. Caplan and C. Shan Xu, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The derived reference statistics use the crop, intensity representation, patch selection and feature extraction described above. [Janelia OpenOrganelle mouse kidney reference dataset, version 1](https://doi.org/10.25378/janelia.16913035.v1)
